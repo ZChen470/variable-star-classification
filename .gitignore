@@ -1,0 +1,14 @@
+# Go build and test outputs
+bin/
+coverage.out
+*.test
+*.exe
+
+# Editors
+.idea/
+.vscode/
+*.swp
+
+# Operating system files
+.DS_Store
+Thumbs.db
