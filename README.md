@@ -95,3 +95,27 @@ Proto 源文件位于：
 
     job_id: 46709af9-e19b-5dfc-beb5-b9213127fd18
     run_id: d42c8015-e1f6-59df-b3ad-3e0f3cff2702
+
+## 分类器应用边界
+
+应用层通过以下接口调用变源分类器：
+
+    internal/application.VariableStarClassifier
+
+稳定输入输出类型位于：
+
+    internal/application/classifier.go
+
+当前模型输出维度固定为：
+
+- 7 个粗类别概率
+- 10 个条件细类别概率
+- 12 个最终叶子类别概率
+
+应用接口不依赖 Protobuf、Kafka、数据库或 Triton 类型。
+
+本地测试使用以下 Fake 实现：
+
+    internal/testsupport/fakeclassifier/
+
+Fake Classifier 可以返回预设结果、注入错误并记录调用输入。它只用于测试，不代表真实科学模型或生产推理实现。
