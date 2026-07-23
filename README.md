@@ -62,3 +62,36 @@ Proto 源文件位于：
     gen/go/astro/classification/v1/
 
 生成的 `.pb.go` 文件不应直接手工修改。需要调整消息契约时，应修改对应的 `.proto` 文件，再重新生成。buf generate 会读取仓库根目录的 buf.gen.yaml，调用已配置的本地 protoc-gen-go，并按照配置重新生成 gen/go 内容。
+
+
+
+## 确定性任务标识
+
+系统不持久化 `ClassificationJob`。一个逻辑分类任务由以下字段唯一确定：
+
+- `object_id`
+- `light_curve_revision`
+- `model_bundle_version`
+- `classification_policy_version`
+- `execution_mode`
+
+领域代码位于：
+
+    internal/domain/identity.go
+
+相同任务输入始终生成相同的 `job_id`。一个 `job_id` 始终生成相同的成功结果 `run_id`，用于支持 Kafka 至少一次投递下的幂等处理。
+
+当前 ID 算法使用 UUIDv5。字符串按 UTF-8 原样参与计算，不自动去除空白或转换大小写。
+
+固定测试向量：
+
+    object_id: OBJ-0001
+    light_curve_revision: 21
+    model_bundle_version: bundle-2026-07-001
+    classification_policy_version: classification-policy-v1
+    execution_mode: PRODUCTION
+
+预期结果：
+
+    job_id: 46709af9-e19b-5dfc-beb5-b9213127fd18
+    run_id: d42c8015-e1f6-59df-b3ad-3e0f3cff2702
