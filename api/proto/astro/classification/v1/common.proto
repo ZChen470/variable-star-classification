@@ -1,0 +1,131 @@
+syntax = "proto3";
+
+package astro.classification.v1;
+
+option go_package = "github.com/ZChen470/variable-star-classification/gen/go/astro/classification/v1;classificationv1";
+
+message TraceContext {
+  string trace_id = 1;
+  string correlation_id = 2;
+  string causation_id = 3;
+}
+
+enum CandidateEventType {
+  CANDIDATE_EVENT_TYPE_UNSPECIFIED = 0;
+  CANDIDATE_CREATED = 1;
+  CANDIDATE_UPDATED = 2;
+  CANDIDATE_RETRACTED = 3;
+}
+
+enum ExecutionMode {
+  EXECUTION_MODE_UNSPECIFIED = 0;
+  EXECUTION_MODE_PRODUCTION = 1;
+  EXECUTION_MODE_SHADOW = 2;
+  EXECUTION_MODE_REPROCESS = 3;
+}
+
+enum ClassificationPriority {
+  CLASSIFICATION_PRIORITY_UNSPECIFIED = 0;
+  CLASSIFICATION_PRIORITY_REALTIME = 1;
+  CLASSIFICATION_PRIORITY_NORMAL = 2;
+  CLASSIFICATION_PRIORITY_BATCH = 3;
+}
+
+enum CoarseSourceType {
+  COARSE_SOURCE_TYPE_UNSPECIFIED = 0;
+
+  // 当前 revision 执行特征提取和 XGBoost。
+  COARSE_SOURCE_COMPUTED_CURRENT = 1;
+
+  // 从历史 ClassificationRun 复用粗分类概率。
+  COARSE_SOURCE_REUSED_PREVIOUS = 2;
+
+  // n > 20，但没有兼容历史结果，因此补执行一次 XGBoost。
+  COARSE_SOURCE_COMPUTED_BOOTSTRAP = 3;
+}
+
+// 粗类别
+enum CoarseClass {
+  COARSE_CLASS_UNSPECIFIED = 0;
+
+  COARSE_CLASS_PULSATING = 10;
+  COARSE_CLASS_LONG_PERIOD = 20;
+  COARSE_CLASS_CATACLYSMIC = 30;
+  COARSE_CLASS_RR_LYRAE = 40;
+  COARSE_CLASS_ROTATING = 50;
+  COARSE_CLASS_ECLIPSING_BINARY = 60;
+  COARSE_CLASS_SUPERNOVA = 70;
+}
+
+// 最终叶子类别
+enum LeafClass {
+  LEAF_CLASS_UNSPECIFIED = 0;
+
+  LEAF_CLASS_CATACLYSMIC = 30;
+  LEAF_CLASS_SUPERNOVA = 70;
+
+  LEAF_CLASS_DSCT = 1001;
+  LEAF_CLASS_CEP = 1002;
+
+  LEAF_CLASS_SR = 2001;
+  LEAF_CLASS_MIRA = 2002;
+
+  LEAF_CLASS_RRAB = 4001;
+  LEAF_CLASS_RRC = 4002;
+
+  LEAF_CLASS_BY_DRA = 5001;
+  LEAF_CLASS_RS_CVN = 5002;
+
+  LEAF_CLASS_EW = 6001;
+  LEAF_CLASS_EA = 6002;
+}
+
+// 七维粗分类概率 字段顺序和 XGBoost 输出顺序一致
+message CoarseProbabilities {
+  float rotating = 1;
+  float cataclysmic = 2;
+  float eclipsing_binary = 3;
+  float long_period = 4;
+  float pulsating = 5;
+  float rr_lyrae = 6;
+  float supernova = 7;
+}
+
+// 十个条件细分类概率
+message FineConditionalProbabilities {
+  float ew_given_eclipsing_binary = 1;
+  float ea_given_eclipsing_binary = 2;
+
+  float by_dra_given_rotating = 3;
+  float rs_cvn_given_rotating = 4;
+
+  float rrab_given_rr_lyrae = 5;
+  float rrc_given_rr_lyrae = 6;
+
+  float sr_given_long_period = 7;
+  float mira_given_long_period = 8;
+
+  float dsct_given_pulsating = 9;
+  float cep_given_pulsating = 10;
+}
+
+// 12个最终类别概率
+message LeafProbabilities {
+  float ew = 1;
+  float ea = 2;
+
+  float by_dra = 3;
+  float rs_cvn = 4;
+
+  float rrab = 5;
+  float rrc = 6;
+
+  float sr = 7;
+  float mira = 8;
+
+  float dsct = 9;
+  float cep = 10;
+
+  float cataclysmic = 11;
+  float supernova = 12;
+}

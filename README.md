@@ -40,3 +40,25 @@ Windows 本地可以直接执行：
 ## Go Module
 
     github.com/ZChen470/variable-star-classification
+
+## Protobuf
+
+Proto 源文件位于：
+
+    api/proto/astro/classification/v1/
+
+检查 Proto：
+
+    buf format --exit-code
+    buf lint
+    buf build
+
+重新生成 Go 代码：
+
+    buf generate
+
+生成代码位于：
+
+    gen/go/astro/classification/v1/
+
+生成的 `.pb.go` 文件不应直接手工修改。需要调整消息契约时，应修改对应的 `.proto` 文件，再重新生成。buf generate 会读取仓库根目录的 buf.gen.yaml，调用已配置的本地 protoc-gen-go，并按照配置重新生成 gen/go 内容。

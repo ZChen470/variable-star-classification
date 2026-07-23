@@ -1,0 +1,42 @@
+syntax = "proto3";
+
+package astro.classification.v1;
+
+import "astro/classification/v1/common.proto";
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/ZChen470/variable-star-classification/gen/go/astro/classification/v1;classificationv1";
+
+message CandidateEvent {
+  // Kafka 重放时保持不变的事件唯一 ID。
+  string event_id = 1;
+
+  CandidateEventType event_type = 2;
+
+  // 上游稳定天体标识。
+  string object_id = 3;
+
+  // 候选筛选状态版本。
+  int64 candidate_revision = 4;
+
+  // 本次分类必须读取的不可变光变曲线版本。
+  int64 light_curve_revision = 5;
+
+  // 上游质量过滤后的 epoch 数。
+  uint32 eligible_epoch_count = 6;
+
+  // 候选事件在上游发生的时间。
+  google.protobuf.Timestamp occurred_at = 7;
+
+  // 生产该事件的上游服务。
+  string producer = 8;
+
+  string upstream_pipeline_version = 9;
+
+  // 上游当前具备版本时填写。
+  optional string quality_policy_version = 10;
+
+  optional string trigger_reason = 11;
+
+  TraceContext trace_context = 12;
+}

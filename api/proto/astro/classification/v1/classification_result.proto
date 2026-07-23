@@ -1,0 +1,81 @@
+syntax = "proto3";
+
+package astro.classification.v1;
+
+import "astro/classification/v1/common.proto";
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/ZChen470/variable-star-classification/gen/go/astro/classification/v1;classificationv1";
+
+message ClassificationResult {
+  // 确定性生成；同一个 Job 重试后保持不变。
+  string run_id = 1;
+
+  string job_id = 2;
+
+  string object_id = 3;
+
+  int64 candidate_revision = 4;
+
+  // Transformer 本次实际使用的当前光变曲线版本。
+  int64 light_curve_revision = 5;
+
+  uint32 effective_epoch_count = 6;
+
+  CoarseSourceType coarse_source_type = 7;
+
+  // REUSED_PREVIOUS 时指向历史 Run。
+  optional string coarse_source_run_id = 8;
+
+  // 本次七维粗概率实际来源的光变曲线版本。
+  int64 coarse_source_light_curve_revision = 9;
+
+  uint32 coarse_source_epoch_count = 10;
+
+  bool xgboost_executed = 11;
+
+  ResolvedModelVersions versions = 12;
+
+  CoarseProbabilities coarse_probabilities = 13;
+
+  FineConditionalProbabilities fine_conditional_probabilities = 14;
+
+  LeafProbabilities leaf_probabilities = 15;
+
+  CoarseClass predicted_coarse_class = 16;
+
+  LeafClass predicted_leaf_class = 17;
+
+  ClassificationTiming timing = 18;
+
+  google.protobuf.Timestamp completed_at = 19;
+
+  TraceContext trace_context = 20;
+
+  // 结果所属执行模式；Result Writer 据此判断是否允许更新 CurrentClassification。
+  ExecutionMode execution_mode = 21;
+}
+
+message ResolvedModelVersions {
+  string model_bundle_version = 1;
+
+  string taxonomy_version = 2;
+
+  string xgboost_model_version = 3;
+  string transformer_model_version = 4;
+
+  string preprocessing_version = 5;
+  string feature_schema_version = 6;
+  string tensor_schema_version = 7;
+
+  string classification_policy_version = 8;
+}
+
+message ClassificationTiming {
+  uint64 data_fetch_ms = 1;
+  uint64 preprocessing_ms = 2;
+  uint64 xgboost_inference_ms = 3;
+  uint64 transformer_inference_ms = 4;
+  uint64 fusion_ms = 5;
+  uint64 total_ms = 6;
+}

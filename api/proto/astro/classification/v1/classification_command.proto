@@ -1,0 +1,36 @@
+syntax = "proto3";
+
+package astro.classification.v1;
+
+import "astro/classification/v1/common.proto";
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/ZChen470/variable-star-classification/gen/go/astro/classification/v1;classificationv1";
+
+message ClassificationCommand {
+  string job_id = 1;
+
+  string object_id = 2;
+
+  // 只用于追溯，不参与 Job 唯一键。
+  int64 candidate_revision = 3;
+
+  int64 light_curve_revision = 4;
+
+  // 上游声明的 epoch 数，Worker 读取后应再次校验。
+  uint32 declared_eligible_epoch_count = 5;
+
+  string model_bundle_version = 6;
+
+  string classification_policy_version = 7;
+
+  ExecutionMode execution_mode = 8;
+
+  ClassificationPriority priority = 9;
+
+  google.protobuf.Timestamp created_at = 10;
+
+  optional google.protobuf.Timestamp deadline_at = 11;
+
+  TraceContext trace_context = 12;
+}
