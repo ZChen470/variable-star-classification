@@ -39,11 +39,17 @@ jobs:
       - name: Install protoc-gen-go
         run: go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.36.6
 
+      - name: Install goose
+        run: |
+          go install github.com/pressly/goose/v3/cmd/goose@v3.24.1
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+
       - name: Show tool versions
         run: |
           go version
           buf --version
           protoc-gen-go --version
+          goose -version
           make --version
 
       - name: Run quality gate
@@ -53,11 +59,3 @@ jobs:
         run: |
           git diff --exit-code
           test -z "$(git status --porcelain)"
-
-      - name: Install goose
-        run: |
-          go install github.com/pressly/goose/v3/cmd/goose@v3.24.1
-          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
-
-      - name: Verify goose
-        run: goose -version
