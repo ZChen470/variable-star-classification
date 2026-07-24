@@ -50,7 +50,10 @@ test:
 build:
 	go build ./...
 
-check: fmt-check proto-check vet test build
+migration-validate:
+	goose -dir migrations validate
+
+check: fmt-check proto-check vet test build migration-validate
 
 ci:
 	$(MAKE) fmt-check
@@ -60,3 +63,4 @@ ci:
 	$(MAKE) vet
 	$(MAKE) test
 	$(MAKE) build
+	$(MAKE) migration-validate
