@@ -1,4 +1,4 @@
-.PHONY: fmt fmt-check proto-format proto-format-check proto-lint proto-build proto-generate proto-check vet test build check
+.PHONY: fmt fmt-check proto-format proto-format-check proto-lint proto-build proto-generate proto-generate-check proto-check mod-tidy-check vet test build check ci
 
 fmt:
 	gofmt -w .
@@ -19,6 +19,9 @@ proto-build:
 	buf build
 
 proto-generate:
+	buf generate
+
+proto-generate-check:
 	buf generate
 	@test -z "$$(git status --porcelain -- gen/go)" || { \
 		echo "generated Protobuf Go code is not up to date"; \
