@@ -55,4 +55,9 @@ jobs:
           test -z "$(git status --porcelain)"
 
       - name: Install goose
-        run: go install github.com/pressly/goose/v3/cmd/goose@v3.24.1
+        run: |
+          go install github.com/pressly/goose/v3/cmd/goose@v3.24.1
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+
+      - name: Verify goose
+        run: goose -version
