@@ -1,11 +1,14 @@
 package application
 
-import "context"
+import (
+	"context"
+	"github.com/ZChen470/variable-star-classification/internal/domain"
+)
 
 const (
-	CoarseClassCount          = 7
-	ConditionalFineClassCount = 10
-	LeafClassCount            = 12
+	CoarseClassCount          = domain.CoarseProbabilityCount
+	ConditionalFineClassCount = domain.ConditionalFineProbabilityCount
+	LeafClassCount            = domain.LeafProbabilityCount
 )
 
 // CoarseMode 决定本次推理怎样取得七维粗分类概率。
