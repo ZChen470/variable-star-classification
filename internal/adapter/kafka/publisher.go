@@ -89,19 +89,20 @@ func validateOutboundMessage(message application.OutboundMessage) error {
 	}
 
 	// 本项目所有业务 Topic 都以 object_id 为 key
-	if len(message.Key) == 0 {
-		return errors.New("message key is empty")
-	}
+	//if len(message.Key) == 0 {
+	//	return errors.New("message key is empty")
+	//}
+	//
+	//if len(message.Value) == 0 {
+	//	return errors.New("message value is empty")
+	//}
 
-	if len(message.Value) == 0 {
-		return errors.New("message value is empty")
-	}
-
-	for index, header := range message.Headers {
-		if header.Key == "" {
-			return fmt.Errorf("header %d key is empty", index)
-		}
-	}
+	// 允许空 header key
+	//for index, header := range message.Headers {
+	//	if header.Key == "" {
+	//		return fmt.Errorf("header %d key is empty", index)
+	//	}
+	//}
 
 	return nil
 }

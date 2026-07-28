@@ -139,6 +139,82 @@ func TestPublisherReturnsProduceError(t *testing.T) {
 	}
 }
 
+func TestPublisherAllowsEmptyKeyAndValue(t *testing.T) {
+	tests := []struct {
+		name  string
+		key   []byte
+		value []byte
+	}{
+		{
+			name:  "nil key and nil value",
+			key:   nil,
+			value: nil,
+		},
+		{
+			name:  "empty non-nil key and value",
+			key:   []byte{},
+			value: []byte{},
+		},
+		{
+			name:  "nil key with value",
+			key:   nil,
+			value: []byte("original-value"),
+		},
+		{
+			name:  "key with nil value",
+			key:   []byte("original-key"),
+			value: nil,
+		},
+	}
+
+	for _, test := range tests {
+		test := test
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			producer := &fakeSyncProducer{}
+			publisher := newPublisher(producer)
+
+			err := publisher.Publish(
+				context.Background(),
+				application.OutboundMessage{
+					Topic: "astro.candidate.events.dlq.v1",
+					Key:   test.key,
+					Value: test.value,
+				},
+			)
+			if err != nil {
+				t.Fatalf("Publish() returned error: %v", err)
+			}
+
+			if len(producer.records) != 1 {
+				t.Fatalf(
+					"produced record count = %d, want 1",
+					len(producer.records),
+				)
+			}
+
+			record := producer.records[0]
+
+			if !reflect.DeepEqual(record.Key, test.key) {
+				t.Fatalf(
+					"record key = %#v, want %#v",
+					record.Key,
+					test.key,
+				)
+			}
+
+			if !reflect.DeepEqual(record.Value, test.value) {
+				t.Fatalf(
+					"record value = %#v, want %#v",
+					record.Value,
+					test.value,
+				)
+			}
+		})
+	}
+}
+
 func TestPublisherRejectsInvalidMessage(t *testing.T) {
 	testCases := []struct {
 		name      string
@@ -152,36 +228,6 @@ func TestPublisherRejectsInvalidMessage(t *testing.T) {
 				Value: []byte{0x01},
 			},
 			errorPart: "topic is empty",
-		},
-		{
-			name: "empty key",
-			message: application.OutboundMessage{
-				Topic: "topic-v1",
-				Value: []byte{0x01},
-			},
-			errorPart: "message key is empty",
-		},
-		{
-			name: "empty value",
-			message: application.OutboundMessage{
-				Topic: "topic-v1",
-				Key:   []byte("OBJECT-001"),
-			},
-			errorPart: "message value is empty",
-		},
-		{
-			name: "empty header key",
-			message: application.OutboundMessage{
-				Topic: "topic-v1",
-				Key:   []byte("OBJECT-001"),
-				Value: []byte{0x01},
-				Headers: []application.MessageHeader{
-					{
-						Value: []byte("value"),
-					},
-				},
-			},
-			errorPart: "header 0 key is empty",
 		},
 	}
 
@@ -210,6 +256,65 @@ func TestPublisherRejectsInvalidMessage(t *testing.T) {
 				)
 			}
 		})
+	}
+}
+
+func TestPublisherPreservesArbitraryHeaders(t *testing.T) {
+	t.Parallel()
+
+	producer := &fakeSyncProducer{}
+	publisher := newPublisher(producer)
+
+	message := application.OutboundMessage{
+		Topic: "astro.candidate.events.dlq.v1",
+		Headers: []application.MessageHeader{
+			{
+				Key:   "",
+				Value: nil,
+			},
+			{
+				Key:   "",
+				Value: []byte{},
+			},
+			{
+				Key:   "normal-header",
+				Value: []byte("value"),
+			},
+		},
+	}
+
+	if err := publisher.Publish(context.Background(), message); err != nil {
+		t.Fatalf("Publish() returned error: %v", err)
+	}
+
+	if len(producer.records) != 1 {
+		t.Fatalf(
+			"produced record count = %d, want 1",
+			len(producer.records),
+		)
+	}
+
+	wantHeaders := []kgo.RecordHeader{
+		{
+			Key:   "",
+			Value: nil,
+		},
+		{
+			Key:   "",
+			Value: []byte{},
+		},
+		{
+			Key:   "normal-header",
+			Value: []byte("value"),
+		},
+	}
+
+	if !reflect.DeepEqual(producer.records[0].Headers, wantHeaders) {
+		t.Fatalf(
+			"headers = %#v, want %#v",
+			producer.records[0].Headers,
+			wantHeaders,
+		)
 	}
 }
 

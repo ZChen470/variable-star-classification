@@ -429,18 +429,6 @@ func TestBuildClassificationCommandMessageRejectsInvalidInput(t *testing.T) {
 			}(),
 			errorPart: "unsupported classification priority",
 		},
-		{
-			name:     "empty header key",
-			topic:    testClassificationCommandTopic,
-			input:    validClassificationCommandInput(),
-			decision: validClassificationCommandDecision(),
-			headers: []MessageHeader{
-				{
-					Value: []byte("value"),
-				},
-			},
-			errorPart: "header 0 key",
-		},
 	}
 
 	for _, test := range tests {
@@ -537,11 +525,11 @@ func TestBuildClassificationCommandMessagePreservesHeaderValueSemantics(t *testi
 
 	headers := []MessageHeader{
 		{
-			Key:   "nil-value",
+			Key:   "",
 			Value: nil,
 		},
 		{
-			Key:   "empty-value",
+			Key:   "",
 			Value: []byte{},
 		},
 		{
@@ -558,6 +546,17 @@ func TestBuildClassificationCommandMessagePreservesHeaderValueSemantics(t *testi
 	)
 	if err != nil {
 		t.Fatalf("BuildClassificationCommandMessage returned error: %v", err)
+	}
+
+	for index := range headers {
+		if message.Headers[index].Key != headers[index].Key {
+			t.Fatalf(
+				"header %d key = %q, want %q",
+				index,
+				message.Headers[index].Key,
+				headers[index].Key,
+			)
+		}
 	}
 
 	if message.Headers[0].Value != nil {

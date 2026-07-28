@@ -106,10 +106,7 @@ func BuildClassificationCommandMessage(commandTopic string, input CandidateEvent
 		)
 	}
 
-	cloneHeader, err := cloneClassificationCommandHeaders(headers)
-	if err != nil {
-		return OutboundMessage{}, err
-	}
+	cloneHeader := cloneClassificationCommandHeaders(headers)
 
 	return OutboundMessage{
 		Topic:   commandTopic,
@@ -155,16 +152,13 @@ func classificationCommandTraceContext(trace TraceContext) *classificationv1.Tra
 	}
 }
 
-func cloneClassificationCommandHeaders(headers []MessageHeader) ([]MessageHeader, error) {
+func cloneClassificationCommandHeaders(headers []MessageHeader) []MessageHeader {
 	if len(headers) == 0 {
-		return nil, nil
+		return nil
 	}
 
 	cloned := make([]MessageHeader, len(headers))
 	for index, header := range headers {
-		if header.Key == "" {
-			return nil, fmt.Errorf("classification command header %d key must not be empty", index)
-		}
 
 		cloned[index].Key = header.Key
 		if header.Value != nil {
@@ -173,5 +167,5 @@ func cloneClassificationCommandHeaders(headers []MessageHeader) ([]MessageHeader
 		}
 	}
 
-	return cloned, nil
+	return cloned
 }
