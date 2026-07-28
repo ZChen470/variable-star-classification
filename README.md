@@ -8,54 +8,54 @@
 
 阶段 1 的工程仓库、Protobuf、确定性任务标识、分类器 Port、Fake 和基础 CI 已完成。
 
-阶段 2 当前已经完成：
+阶段 2 的 PostgreSQL Repository 与 Kafka 基础设施已完成。
 
-- PostgreSQL 分类结果存储 migration；
-- `ClassificationRun` 与 `CurrentClassification` 领域模型；
-- PostgreSQL Classification Repository；
-- Classification Run 幂等保存和 Current 条件推进；
-- 历史兼容粗分类概率查询；
-- Kafka 消息发布 Port；
-- franz-go 同步 Publisher；
-- 手动提交 Offset 的 Consumer Runner；
-- Publisher 和 Consumer Runner 单元测试；
-- PostgreSQL Repository 本地集成测试；
-- Kafka 真实 Broker 集成测试代码。
+阶段 3 的 CandidateEvent → ClassificationCommand 最小业务闭环已完成：
+
+- CandidateEvent Protobuf 解码与消息校验；
+- CREATED、UPDATED 合法事件映射；
+- RETRACTED、UNSPECIFIED、未知类型及畸形消息的永久错误分类；
+- ClassificationPolicy v1；
+- 复用确定性 `job_id` 规则构造 ClassificationCommand；
+- Candidate 原始消息最小 DLQ；
+- CandidateHandler 应用层编排；
+- franz-go Publisher 与 Consumer Runner 集成；
+- `candidate-orchestrator` 最小可运行命令；
+- 本地 Go 门禁和 GitHub Actions CI 验证。
 
 真实 Kafka Broker 验证和独立服务器 PostgreSQL 验证延迟到服务器环境执行。
 
 下一开发阶段为：
 
 ```text
-S3-01 CandidateEvent → ClassificationCommand 范围校准
+阶段 4：固定 revision 数据读取、预处理和特征
 ```
 
 ## 当前范围
 
-当前仓库包含以下工程基础：
+当前仓库包含以下工程能力：
 
 ```text
 Protobuf v1 契约
-        ↓
 确定性 job_id / run_id
-        ↓
 分类器应用 Port 与 Fake
-        ↓
-PostgreSQL Migration
-        ↓
-Classification Repository
-        ↓
-Kafka Publisher / Consumer Runner
+PostgreSQL Migration 与 Classification Repository
+Kafka Publisher 与 Consumer Runner
+CandidateEvent 解码、校验与 ClassificationPolicy v1
+ClassificationCommand 确定性构造
+Candidate 最小 DLQ
+CandidateHandler
+candidate-orchestrator
 ```
 
 当前阶段不包含：
 
-- CandidateEvent 到 ClassificationCommand 的业务编排；
+- 固定 revision 光变曲线读取、预处理和特征构造；
+- 真实 XGBoost 或 Transformer 推理；
 - 完整 ClassificationResult Writer；
 - 持久化 ClassificationJob；
 - Transactional Outbox；
-- Retry Topic 和 DLQ 业务流程；
-- 真实 XGBoost 或 Transformer 推理；
+- Retry Topic 和通用 DLQ 框架；
 - 查询 API、GUI 和人工复核；
 - Kubernetes 和生产部署。
 
@@ -85,8 +85,9 @@ github.com/ZChen470/variable-star-classification
 ```text
 api/proto/astro/classification/v1/   Protobuf v1 源文件
 gen/go/astro/classification/v1/      生成的 Go Protobuf 代码
+cmd/candidate-orchestrator/           Candidate 编排服务入口
 internal/domain/                     领域类型和确定性身份规则
-internal/application/                应用 Port
+internal/application/                应用 Port、Policy、Command 和 Handler
 internal/adapter/postgres/           PostgreSQL Repository
 internal/adapter/kafka/              Kafka Publisher 和 Consumer Runner
 internal/testsupport/                测试替身
@@ -379,14 +380,25 @@ ProduceSync
 
 只有 Kafka 返回生产结果后，`Publish` 才返回成功。
 
-业务消息必须包含：
+Kafka Adapter 对 `OutboundMessage` 只要求 Topic 非空。Key、Value 和 Headers 按应用层提供的原始语义发送，包括：
 
-- Topic；
-- 非空 Key；
-- 非空 Value；
-- 合法的 Header Key。
+- nil Key 或 Value；
+- 非 nil 空 Key 或 Value；
+- 空 Header Key；
+- nil 或非 nil 空 Header Value；
+- 重复 Header Key；
+- 原始 Header 顺序。
 
-本项目业务消息约定使用 `object_id` 作为 Kafka Key。
+ClassificationCommand 使用 `object_id` 作为 Kafka Key。
+
+Candidate DLQ 保留原始消息的 Key、Value、Headers 和 Kafka Record timestamp，并在原始 Headers 后追加：
+
+```
+x-astro-error-code
+x-astro-original-topic
+x-astro-original-partition
+x-astro-original-offset
+```
 
 ### Consumer Runner
 
@@ -412,6 +424,60 @@ AllowRebalance
 Handler 返回错误时不会提交对应 Offset，因此消息可以在消费者重启后重新投递。
 
 当前实现按单条消息同步提交 Offset，优先保证语义清晰。批量提交和性能优化将在真实负载测试后决定。
+
+### Candidate Orchestrator
+
+Candidate Orchestrator 位于：
+
+``` text
+cmd/candidate-orchestrator/
+```
+
+运行时装配关系为：
+
+```
+环境变量
+    ↓
+单个 franz-go Client
+    ↓
+Kafka Publisher
+    ↓
+ClassificationPolicyV1
+    ↓
+CandidateHandler
+    ↓
+ConsumerRunner
+```
+
+同一个 franz-go Client 同时承担 CandidateEvent 消费与 ClassificationCommand、Candidate DLQ 发布。
+
+必需环境变量：
+
+```
+KAFKA_BROKERS
+KAFKA_CONSUMER_GROUP
+CANDIDATE_TOPIC
+CLASSIFICATION_COMMAND_TOPIC
+CANDIDATE_DLQ_TOPIC
+MODEL_BUNDLE_VERSION
+CLASSIFICATION_POLICY_VERSION
+```
+
+可选环境变量：
+
+```
+KAFKA_CLIENT_ID
+```
+
+未设置时默认值为：
+
+```
+variable-star-classification-candidate-orchestrator
+```
+
+Consumer Group 和 Topic 会去除首尾空白。`MODEL_BUNDLE_VERSION` 与 `CLASSIFICATION_POLICY_VERSION` 保留原始字符串，因为它们参与确定性任务身份计算。
+
+服务收到中断信号或 `SIGTERM` 后取消运行上下文，并通过 `CloseAllowingRebalance` 关闭 Kafka Client。
 
 ### Kafka Broker 集成测试
 
@@ -455,17 +521,16 @@ Remove-Item Env:TEST_KAFKA_TOPIC
 
 | 验证项 | 状态 |
 | --- | --- |
-| Go 1.25.0 本地工具链 | `VERIFIED_LOCAL` |
-| Go 1.25.0 GitHub Actions | `VERIFIED_CI` |
-| Protobuf 检查和生成代码漂移 | `VERIFIED_CI` |
-| Goose migration 检查 | `VERIFIED_CI` |
-| PostgreSQL migration 本地 up/down/up | `VERIFIED_LOCAL` |
-| PostgreSQL Repository 集成测试 | `VERIFIED_LOCAL` |
-| 独立服务器 PostgreSQL 验证 | `DEFERRED` |
 | Kafka Publisher 单元测试 | `VERIFIED_CI` |
 | Kafka Consumer Runner 单元测试 | `VERIFIED_CI` |
+| CandidateEvent 解码与校验 | `VERIFIED_CI` |
+| ClassificationPolicy v1 | `VERIFIED_CI` |
+| ClassificationCommand 确定性构造 | `VERIFIED_CI` |
+| Candidate 最小 DLQ | `VERIFIED_CI` |
+| CandidateHandler | `VERIFIED_CI` |
+| Candidate Orchestrator | `VERIFIED_CI` |
+| CandidateEvent → ClassificationCommand | `VERIFIED_CI` |
 | 真实 Kafka Broker 集成测试 | `DEFERRED` |
-| CandidateEvent → ClassificationCommand | `NOT_STARTED` |
 | 完整 ClassificationResult Writer | `NOT_STARTED` |
 
 状态含义：
@@ -481,15 +546,18 @@ NOT_STARTED      尚未开始
 
 ## 阶段边界
 
-阶段 2 只建立数据库和 Kafka 的可靠基础，不提前实现完整业务闭环。
+阶段 1 已完成工程基础、Protobuf 契约、确定性身份规则和分类器应用 Port。
+
+阶段 2 已完成 PostgreSQL Repository 与 Kafka Publisher、Consumer Runner 基础设施。
+
+阶段 3 已完成 CandidateEvent → ClassificationCommand 的最小业务闭环，包括永久非法消息的 Candidate DLQ 处理和最小 Candidate Orchestrator。
 
 后续阶段划分：
 
 ```text
-阶段 3：CandidateEvent → ClassificationCommand
 阶段 4：固定 revision 数据读取、预处理和特征
 阶段 5：Triton 推理
 阶段 6：ClassificationResult → Run → Current 完整闭环
 ```
 
-这种划分避免在数据库和消息基础尚未稳定时，提前耦合编排、推理和结果写入逻辑。
+当前阶段保持无状态，不读取光变曲线、不调用 Triton、不写入 ClassificationRun，也不更新 CurrentClassification。
