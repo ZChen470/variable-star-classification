@@ -159,10 +159,10 @@ func DecodeCandidateEventMessage(expectedTopic string, message InboundMessage) (
 		)
 	}
 
-	if event.GetEligibleEpochCount() < 3 {
+	if event.GetEligibleEpochCount() < MinimumEligibleEpochCount {
 		return CandidateEventInput{}, invalidCandidateField(
 			"eligible_epoch_count",
-			fmt.Errorf("must be at least 3, got %d", event.GetEligibleEpochCount()),
+			fmt.Errorf("must be at least %d, got %d", MinimumEligibleEpochCount, event.GetEligibleEpochCount()),
 		)
 	}
 
