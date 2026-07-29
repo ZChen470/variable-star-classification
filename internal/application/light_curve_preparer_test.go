@@ -360,3 +360,136 @@ func validEpochs(count int) []domain.LightCurveEpoch {
 
 	return epochs
 }
+
+func TestPrepareLightCurveRevisionAcceptsEpochCountBoundaries(
+	t *testing.T,
+) {
+	tests := []struct {
+		name  string
+		count int
+	}{
+		{
+			name:  "minimum",
+			count: 3,
+		},
+		{
+			name:  "maximum",
+			count: 1024,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			epochs := validEpochs(test.count)
+
+			// 反转输入，确保边界数量下仍执行确定性时间排序。
+			for left, right := 0, len(epochs)-1; left < right; {
+				epochs[left], epochs[right] =
+					epochs[right], epochs[left]
+				left++
+				right--
+			}
+
+			revision := domain.LightCurveRevision{
+				ObjectID:           "OBJ-BOUNDARY",
+				Revision:           31,
+				EligibleEpochCount: uint32(test.count),
+				Epochs:             epochs,
+			}
+
+			got, err := application.PrepareLightCurveRevision(
+				revision,
+				uint32(test.count),
+			)
+			if err != nil {
+				t.Fatalf(
+					"PrepareLightCurveRevision() error = %v",
+					err,
+				)
+			}
+
+			if len(got.Epochs) != test.count {
+				t.Fatalf(
+					"prepared epoch count = %d, want %d",
+					len(got.Epochs),
+					test.count,
+				)
+			}
+
+			for index := 1; index < len(got.Epochs); index++ {
+				if got.Epochs[index-1].ObservationTime >=
+					got.Epochs[index].ObservationTime {
+					t.Fatalf(
+						"epochs not strictly increasing at indices %d,%d: %v >= %v",
+						index-1,
+						index,
+						got.Epochs[index-1].ObservationTime,
+						got.Epochs[index].ObservationTime,
+					)
+				}
+			}
+		})
+	}
+}
+
+func TestPrepareLightCurveRevisionRejectsNilAndEmptyEpochsAsInsufficient(
+	t *testing.T,
+) {
+	tests := []struct {
+		name   string
+		epochs []domain.LightCurveEpoch
+	}{
+		{
+			name:   "nil epochs",
+			epochs: nil,
+		},
+		{
+			name:   "non nil empty epochs",
+			epochs: []domain.LightCurveEpoch{},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			revision := domain.LightCurveRevision{
+				EligibleEpochCount: 0,
+				Epochs:             test.epochs,
+			}
+
+			got, err := application.PrepareLightCurveRevision(
+				revision,
+				0,
+			)
+			if !errors.Is(
+				err,
+				application.ErrInsufficientLightCurveEpochs,
+			) {
+				t.Fatalf(
+					"PrepareLightCurveRevision() error = %v, want %v",
+					err,
+					application.ErrInsufficientLightCurveEpochs,
+				)
+			}
+
+			if errors.Is(
+				err,
+				application.ErrLightCurveEpochCountMismatch,
+			) {
+				t.Fatalf(
+					"PrepareLightCurveRevision() error unexpectedly matches %v",
+					application.ErrLightCurveEpochCountMismatch,
+				)
+			}
+
+			if !reflect.DeepEqual(
+				got,
+				domain.LightCurveRevision{},
+			) {
+				t.Fatalf(
+					"PrepareLightCurveRevision() = %#v, want zero value",
+					got,
+				)
+			}
+		})
+	}
+}
