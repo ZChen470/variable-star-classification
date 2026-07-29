@@ -596,3 +596,411 @@ func (finder *recordingCompatibleCoarseFinder) FindLatestCompatibleCoarse(
 
 	return finder.result, nil
 }
+
+func TestCoarseModeSelectorUsesExactTwentyTwentyOneBoundary(
+	t *testing.T,
+) {
+	const modelBundleVersion = "bundle-boundary-v1"
+
+	metadata := validModelBundleMetadata(modelBundleVersion)
+	resolver := fakemodelbundle.New(
+		map[string]fakemodelbundle.Response{
+			modelBundleVersion: {
+				Metadata: metadata,
+			},
+		},
+	)
+
+	finder := &recordingCompatibleCoarseFinder{
+		err: errors.Join(
+			errors.New("wrapped repository result"),
+			application.ErrCompatibleCoarseNotFound,
+		),
+	}
+
+	selector, err := application.NewCoarseModeSelector(
+		resolver,
+		finder,
+	)
+	if err != nil {
+		t.Fatalf("NewCoarseModeSelector() error = %v", err)
+	}
+
+	gotAtTwenty, err := selector.Select(
+		context.Background(),
+		"OBJ-BOUNDARY",
+		40,
+		20,
+		modelBundleVersion,
+	)
+	if err != nil {
+		t.Fatalf("Select(n=20) error = %v", err)
+	}
+	if gotAtTwenty.Mode != application.CoarseModeComputeCurrent {
+		t.Fatalf(
+			"Select(n=20) mode = %v, want %v",
+			gotAtTwenty.Mode,
+			application.CoarseModeComputeCurrent,
+		)
+	}
+	if gotCalls := len(finder.calls); gotCalls != 0 {
+		t.Fatalf(
+			"finder call count after n=20 = %d, want 0",
+			gotCalls,
+		)
+	}
+
+	gotAtTwentyOne, err := selector.Select(
+		context.Background(),
+		"OBJ-BOUNDARY",
+		40,
+		21,
+		modelBundleVersion,
+	)
+	if err != nil {
+		t.Fatalf("Select(n=21) error = %v", err)
+	}
+	if gotAtTwentyOne.Mode !=
+		application.CoarseModeComputeBootstrap {
+		t.Fatalf(
+			"Select(n=21) mode = %v, want %v",
+			gotAtTwentyOne.Mode,
+			application.CoarseModeComputeBootstrap,
+		)
+	}
+	if gotAtTwentyOne.ReusedCoarse != nil {
+		t.Fatalf(
+			"Select(n=21) reused coarse = %#v, want nil",
+			gotAtTwentyOne.ReusedCoarse,
+		)
+	}
+	if gotCalls := len(finder.calls); gotCalls != 1 {
+		t.Fatalf(
+			"finder call count after n=21 = %d, want 1",
+			gotCalls,
+		)
+	}
+}
+
+func TestCoarseModeSelectorRejectsInvalidCompatibleCoarseResult(
+	t *testing.T,
+) {
+	const (
+		modelBundleVersion = "bundle-history-v1"
+		targetRevision     = int64(40)
+	)
+
+	baseResult := application.CompatibleCoarseResult{
+		SourceRunID:              domain.RunID("source-run-valid"),
+		SourceLightCurveRevision: 39,
+		SourceEpochCount:         20,
+		Probabilities: [domain.CoarseProbabilityCount]float32{
+			0.10,
+			0.20,
+			0.15,
+			0.05,
+			0.25,
+			0.15,
+			0.10,
+		},
+	}
+
+	tests := []struct {
+		name   string
+		mutate func(*application.CompatibleCoarseResult)
+	}{
+		{
+			name: "empty source run id",
+			mutate: func(result *application.CompatibleCoarseResult) {
+				result.SourceRunID = ""
+			},
+		},
+		{
+			name: "zero source revision",
+			mutate: func(result *application.CompatibleCoarseResult) {
+				result.SourceLightCurveRevision = 0
+			},
+		},
+		{
+			name: "source revision equals target",
+			mutate: func(result *application.CompatibleCoarseResult) {
+				result.SourceLightCurveRevision = targetRevision
+			},
+		},
+		{
+			name: "source revision exceeds target",
+			mutate: func(result *application.CompatibleCoarseResult) {
+				result.SourceLightCurveRevision =
+					targetRevision + 1
+			},
+		},
+		{
+			name: "source epoch count below minimum",
+			mutate: func(result *application.CompatibleCoarseResult) {
+				result.SourceEpochCount = 2
+			},
+		},
+		{
+			name: "source epoch count above maximum",
+			mutate: func(result *application.CompatibleCoarseResult) {
+				result.SourceEpochCount = 1025
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			result := baseResult
+			test.mutate(&result)
+
+			resolver := fakemodelbundle.New(
+				map[string]fakemodelbundle.Response{
+					modelBundleVersion: {
+						Metadata: validModelBundleMetadata(
+							modelBundleVersion,
+						),
+					},
+				},
+			)
+			finder := &recordingCompatibleCoarseFinder{
+				result: result,
+			}
+
+			selector, err := application.NewCoarseModeSelector(
+				resolver,
+				finder,
+			)
+			if err != nil {
+				t.Fatalf(
+					"NewCoarseModeSelector() error = %v",
+					err,
+				)
+			}
+
+			got, err := selector.Select(
+				context.Background(),
+				"OBJ-HISTORY",
+				targetRevision,
+				21,
+				modelBundleVersion,
+			)
+			if !errors.Is(
+				err,
+				application.ErrInvalidCompatibleCoarseResult,
+			) {
+				t.Fatalf(
+					"Select() error = %v, want %v",
+					err,
+					application.ErrInvalidCompatibleCoarseResult,
+				)
+			}
+			if !reflect.DeepEqual(
+				got,
+				application.CoarseModeSelection{},
+			) {
+				t.Fatalf(
+					"Select() = %#v, want zero value",
+					got,
+				)
+			}
+			if gotCalls := len(finder.calls); gotCalls != 1 {
+				t.Fatalf(
+					"finder call count = %d, want 1",
+					gotCalls,
+				)
+			}
+		})
+	}
+}
+
+func TestCoarseModeSelectorRejectsInvalidRequestBeforeDependencies(
+	t *testing.T,
+) {
+	tests := []struct {
+		name               string
+		objectID           string
+		targetRevision     int64
+		actualEpochCount   uint32
+		modelBundleVersion string
+		wantErr            error
+	}{
+		{
+			name:               "empty object id",
+			objectID:           "",
+			targetRevision:     10,
+			actualEpochCount:   21,
+			modelBundleVersion: "bundle-v1",
+		},
+		{
+			name:               "invalid target revision",
+			objectID:           "OBJ-VALIDATION",
+			targetRevision:     0,
+			actualEpochCount:   21,
+			modelBundleVersion: "bundle-v1",
+		},
+		{
+			name:               "empty model bundle version",
+			objectID:           "OBJ-VALIDATION",
+			targetRevision:     10,
+			actualEpochCount:   21,
+			modelBundleVersion: "",
+		},
+		{
+			name:               "epoch count below minimum",
+			objectID:           "OBJ-VALIDATION",
+			targetRevision:     10,
+			actualEpochCount:   2,
+			modelBundleVersion: "bundle-v1",
+			wantErr:            application.ErrInsufficientLightCurveEpochs,
+		},
+		{
+			name:               "epoch count above maximum",
+			objectID:           "OBJ-VALIDATION",
+			targetRevision:     10,
+			actualEpochCount:   1025,
+			modelBundleVersion: "bundle-v1",
+			wantErr:            application.ErrTooManyLightCurveEpochs,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			resolver := fakemodelbundle.New(nil)
+			finder := &recordingCompatibleCoarseFinder{}
+
+			selector, err := application.NewCoarseModeSelector(
+				resolver,
+				finder,
+			)
+			if err != nil {
+				t.Fatalf(
+					"NewCoarseModeSelector() error = %v",
+					err,
+				)
+			}
+
+			got, err := selector.Select(
+				context.Background(),
+				test.objectID,
+				test.targetRevision,
+				test.actualEpochCount,
+				test.modelBundleVersion,
+			)
+			if err == nil {
+				t.Fatal("Select() error = nil, want error")
+			}
+			if test.wantErr != nil &&
+				!errors.Is(err, test.wantErr) {
+				t.Fatalf(
+					"Select() error = %v, want %v",
+					err,
+					test.wantErr,
+				)
+			}
+			if !reflect.DeepEqual(
+				got,
+				application.CoarseModeSelection{},
+			) {
+				t.Fatalf(
+					"Select() = %#v, want zero value",
+					got,
+				)
+			}
+			if gotCalls := len(resolver.Calls()); gotCalls != 0 {
+				t.Fatalf(
+					"resolver call count = %d, want 0",
+					gotCalls,
+				)
+			}
+			if gotCalls := len(finder.calls); gotCalls != 0 {
+				t.Fatalf(
+					"finder call count = %d, want 0",
+					gotCalls,
+				)
+			}
+		})
+	}
+}
+
+func TestCoarseModeSelectorRejectsNilInvocationBoundaries(
+	t *testing.T,
+) {
+	resolver := fakemodelbundle.New(nil)
+	finder := &recordingCompatibleCoarseFinder{}
+
+	selector, err := application.NewCoarseModeSelector(
+		resolver,
+		finder,
+	)
+	if err != nil {
+		t.Fatalf("NewCoarseModeSelector() error = %v", err)
+	}
+
+	got, err := selector.Select(
+		nil,
+		"OBJ-NIL",
+		10,
+		21,
+		"bundle-v1",
+	)
+	if err == nil {
+		t.Fatal("Select(nil context) error = nil, want error")
+	}
+	if !reflect.DeepEqual(
+		got,
+		application.CoarseModeSelection{},
+	) {
+		t.Fatalf(
+			"Select(nil context) = %#v, want zero value",
+			got,
+		)
+	}
+	if gotCalls := len(resolver.Calls()); gotCalls != 0 {
+		t.Fatalf("resolver call count = %d, want 0", gotCalls)
+	}
+	if gotCalls := len(finder.calls); gotCalls != 0 {
+		t.Fatalf("finder call count = %d, want 0", gotCalls)
+	}
+
+	var nilSelector *application.CoarseModeSelector
+	got, err = nilSelector.Select(
+		context.Background(),
+		"OBJ-NIL",
+		10,
+		21,
+		"bundle-v1",
+	)
+	if err == nil {
+		t.Fatal("nil selector Select() error = nil, want error")
+	}
+	if !reflect.DeepEqual(
+		got,
+		application.CoarseModeSelection{},
+	) {
+		t.Fatalf(
+			"nil selector Select() = %#v, want zero value",
+			got,
+		)
+	}
+
+	var zeroSelector application.CoarseModeSelector
+	got, err = zeroSelector.Select(
+		context.Background(),
+		"OBJ-NIL",
+		10,
+		21,
+		"bundle-v1",
+	)
+	if err == nil {
+		t.Fatal("zero selector Select() error = nil, want error")
+	}
+	if !reflect.DeepEqual(
+		got,
+		application.CoarseModeSelection{},
+	) {
+		t.Fatalf(
+			"zero selector Select() = %#v, want zero value",
+			got,
+		)
+	}
+}

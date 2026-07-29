@@ -12,6 +12,10 @@ var (
 	// ErrInvalidModelBundleMetadata 表示 Resolver 返回的 Bundle 身份
 	// 或阶段 4 所需兼容性版本不合法
 	ErrInvalidModelBundleMetadata = errors.New("invalid model bundle metadata")
+
+	// ErrInvalidCompatibleCoarseResult 表示历史查询返回的粗分类来源
+	// 不满足固定 revision 和 epoch 数约束。
+	ErrInvalidCompatibleCoarseResult = errors.New("invalid compatible coarse result")
 )
 
 // CompatibleCoarseFinder 粗分类模式选择的最小历史查询边界
@@ -162,6 +166,10 @@ func (selector *CoarseModeSelector) Select(ctx context.Context, objectID string,
 		return CoarseModeSelection{}, err
 	}
 
+	if err := validateCompatibleCoarseResult(targetLightCurveRevision, compatibleCoarse); err != nil {
+		return CoarseModeSelection{}, err
+	}
+
 	// CompatibleCoarseResult 只包含值类型和固定数组
 	// 复制后返回独立结果，避免暴露 Finder 内部存储
 	reusedCoarse := compatibleCoarse
@@ -204,6 +212,38 @@ func validateModelBundleMetadata(requestedVersion string, metadata ModelBundleMe
 		if required.value == "" {
 			return fmt.Errorf("%w: %s must not be empty", ErrInvalidModelBundleMetadata, required.name)
 		}
+	}
+
+	return nil
+}
+
+func validateCompatibleCoarseResult(targetLightCurveRevision int64, result CompatibleCoarseResult) error {
+	if result.SourceRunID == "" {
+		return fmt.Errorf("%w: source run ID must not be empty", ErrInvalidCompatibleCoarseResult)
+	}
+
+	if result.SourceLightCurveRevision <= 0 {
+		return fmt.Errorf("%w: source revision=%d must be greater than zero", ErrInvalidCompatibleCoarseResult, result.SourceLightCurveRevision)
+	}
+
+	if result.SourceLightCurveRevision >= targetLightCurveRevision {
+		return fmt.Errorf(
+			"%w: source revision=%d must be less than target revision=%d",
+			ErrInvalidCompatibleCoarseResult,
+			result.SourceLightCurveRevision,
+			targetLightCurveRevision,
+		)
+	}
+
+	if result.SourceEpochCount < minimumLightCurveEpochCount ||
+		result.SourceEpochCount > maximumLightCurveEpochCount {
+		return fmt.Errorf(
+			"%w: source epoch count=%d must be within %d..%d",
+			ErrInvalidCompatibleCoarseResult,
+			result.SourceEpochCount,
+			minimumLightCurveEpochCount,
+			maximumLightCurveEpochCount,
+		)
 	}
 
 	return nil
