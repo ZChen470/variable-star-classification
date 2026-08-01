@@ -1,0 +1,344 @@
+schema_version: model-bundle-manifest-v2
+manifest_status: DRAFT
+
+bundle_id: variable-classifier-2026-07-003
+model_bundle_version: variable-classifier-2026-07-003
+
+taxonomy_version: taxonomy-v1
+classification_policy_version: classification-policy-v1
+feature_schema_version: xgb-feature-schema-v1
+preprocessing_version: transformer-preprocessing-v2
+tensor_schema_version: transformer-tensor-schema-v2
+fusion_contract_version: hierarchical-fusion-v1
+serving_contract_version: variable-star-serving-contract-v1
+
+# 部署地址不属于模型 Bundle。
+# TRITON_BASE_URL 应由 Go 服务的部署配置提供。
+triton_entrypoint:
+  model_name: variable_star_classifier
+  model_version: "1"
+  backend: python
+  max_batch_size: 0
+
+  protocol: triton-v2-http
+  binary_tensor_data: true
+
+  runtime_verification_status: PENDING
+  config_path: variable_star_classifier/config.pbtxt
+  implementation_path: variable_star_classifier/1/model.py
+
+  inputs:
+    - name: TIME_MJD
+      datatype: FP64
+      dims: [-1]
+      semantics: RAW_MJD
+      required: true
+
+    - name: MAGNITUDE
+      datatype: FP32
+      dims: [-1]
+      semantics: RAW_MAGNITUDE
+      required: true
+
+    - name: MAGNITUDE_ERROR
+      datatype: FP32
+      dims: [-1]
+      semantics: RAW_MAGNITUDE_ERROR
+      required: true
+
+    - name: COARSE_MODE
+      datatype: INT32
+      dims: [1]
+      required: true
+
+    - name: REUSED_COARSE_PROBS
+      datatype: FP32
+      dims: [7]
+      required: true
+      semantics: MEANINGFUL_ONLY_FOR_REUSE_PREVIOUS
+
+  outputs:
+    - name: COARSE_PROBS
+      datatype: FP32
+      dims: [7]
+
+    - name: FINE_CONDITIONAL_PROBS
+      datatype: FP32
+      dims: [10]
+
+    - name: LEAF_PROBS
+      datatype: FP32
+      dims: [12]
+
+    - name: XGBOOST_EXECUTED
+      datatype: BOOL
+      dims: [1]
+
+coarse_modes:
+  datatype: INT32
+
+  values:
+    COARSE_MODE_UNSPECIFIED: 0
+    COMPUTE_CURRENT: 1
+    REUSE_PREVIOUS: 2
+    COMPUTE_BOOTSTRAP: 3
+
+  rules:
+    - mode: COARSE_MODE_UNSPECIFIED
+      action: REJECT_REQUEST
+
+    - mode: COMPUTE_CURRENT
+      execute_xgboost: true
+      reused_coarse_probs_action: IGNORE
+
+    - mode: REUSE_PREVIOUS
+      execute_xgboost: false
+      reused_coarse_probs_action: VALIDATE_AND_USE
+
+    - mode: COMPUTE_BOOTSTRAP
+      execute_xgboost: true
+      reused_coarse_probs_action: IGNORE
+
+preprocessing:
+  input_order:
+    expected: STRICTLY_INCREASING_TIME_MJD
+    sorting_performed_by_triton: false
+    reject_duplicate_time_mjd: true
+
+  execution_location: VARIABLE_STAR_CLASSIFIER_PYTHON_BACKEND
+  outside_exported_transformer_graph: true
+
+  input_validation:
+    minimum_sequence_length: 3
+    maximum_sequence_length: 1024
+    require_equal_input_lengths: true
+    require_finite_values: true
+    require_positive_magnitude_error: true
+    truncate_overlength_input: false
+
+  deterministic_sort:
+    fields:
+      - TIME_MJD
+
+  transformer_time:
+    input: TIME_MJD
+    formula: time_value = TIME_MJD - (floor(min(TIME_MJD)) - 1)
+
+    example:
+      minimum_mjd: 568224.6455
+      time_origin: 568223
+      first_time_value: 1.6455
+
+  transformer_magnitude:
+    input: MAGNITUDE
+    method: SUBTRACT_MASKED_VALID_EPOCH_MEAN
+
+  length_buckets:
+    - 32
+    - 64
+    - 128
+    - 256
+    - 512
+    - 768
+    - 1024
+
+  padding:
+    time_padding_value: 0.0
+    magnitude_padding_value: 0.0
+
+  attention_mask:
+    generation: FROM_ACTUAL_SEQUENCE_LENGTH
+    valid_epoch_value: 1
+    padding_value: 0
+    derive_from_magnitude_value: false
+
+  export_requirements:
+    transformer_graph_accepts_preprocessed_values: true
+    transformer_graph_accepts_attention_mask: true
+    transformer_graph_must_not_repeat_time_normalization: true
+    transformer_graph_must_not_repeat_magnitude_centering: true
+    softmax_inside_exported_wrapper: true
+
+xgboost:
+  feature_extraction:
+    execution_location: VARIABLE_STAR_CLASSIFIER_PYTHON_BACKEND
+    feature_count: 57
+    feature_schema_version: xgb-feature-schema-v1
+    feature_order_verification_status: PENDING_TRAINING_DATA_CONFIRMATION
+
+  scaler:
+    required: true
+    implementation: sklearn.preprocessing.StandardScaler
+    artifact_file: TBD_FROM_TRAINING
+    artifact_sha256: TBD_FROM_TRAINING
+    sklearn_version: TBD_FROM_TRAINING
+    fitted_feature_count: 57
+
+    required_state:
+      - mean_
+      - scale_
+      - n_features_in_
+
+  classifier:
+    model_name: xgb_coarse
+    backend: fil
+    model_version: "1"
+
+    artifact_file: xgboost_full_best.json
+    artifact_sha256: 599879caa367ac821aa74c4bfa617880980fa1883971e2e41e94d1343b4e94c6
+
+    objective: multi:softprob
+    input_feature_count: 57
+    output_class_count: 7
+
+  coarse_class_order:
+    verification_status: PENDING_LABEL_ENCODER_CONFIRMATION
+
+    expected_order:
+      - ROTATING
+      - CATACLYSMIC
+      - ECLIPSING_BINARY
+      - LONG_PERIOD
+      - PULSATING
+      - RR_LYRAE
+      - SUPERNOVA
+
+  coarse_compatibility_id: TBD_AFTER_SCALER_AND_LABEL_ORDER_VERIFICATION
+
+transformer:
+  model_name: transformer_multihead
+  backend: onnxruntime
+  model_version: "1"
+
+  architecture: SHARED_BACKBONE_WITH_FIVE_BINARY_HEADS
+
+  exported_artifact:
+    file: model.onnx
+    sha256: TBD_AFTER_EXPORT
+    verification_status: PENDING_EXPORT
+
+  input_contract:
+    time_values: PREPROCESSED_AND_PADDED
+    magnitude_values: CENTERED_AND_PADDED
+    attention_mask: EXPLICIT
+
+  output_contract:
+    value_type: PROBABILITIES
+    softmax_location: EXPORTED_WRAPPER_GRAPH
+
+  fine_heads:
+    - head_index: 0
+      head_name: eclipsing_binary
+      parent_class: ECLIPSING_BINARY
+      output_order:
+        - EW
+        - EA
+
+    - head_index: 1
+      head_name: active
+      parent_class: ROTATING
+      output_order:
+        - BY_DRA
+        - RS_CVN
+
+    - head_index: 2
+      head_name: rr_lyrae
+      parent_class: RR_LYRAE
+      output_order:
+        - RRAB
+        - RRC
+
+    - head_index: 3
+      head_name: long_period
+      parent_class: LONG_PERIOD
+      output_order:
+        - SR
+        - MIRA
+
+    - head_index: 4
+      head_name: pulsating
+      parent_class: PULSATING
+      output_order:
+        - DSCT
+        - CEP
+
+  source_checkpoint_lineage:
+    eclipsing_binary: checkpoints_eclipsing/gpt2_3_best_model.pth
+    active: checkpoints_active/checkpoint.pth
+    rr_lyrae: checkpoints_RR/gpt2_3_best_model.pth
+    long_period: checkpoints_long/gpt2_3_best_model.pth
+    pulsating: checkpoints_pulsate/gpt2_3_best_model.pth
+
+fine_conditional_probability_order:
+  - EW
+  - EA
+  - BY_DRA
+  - RS_CVN
+  - RRAB
+  - RRC
+  - SR
+  - MIRA
+  - DSCT
+  - CEP
+
+leaf_probability_order:
+  - EW
+  - EA
+  - BY_DRA
+  - RS_CVN
+  - RRAB
+  - RRC
+  - SR
+  - MIRA
+  - DSCT
+  - CEP
+  - CATACLYSMIC
+  - SUPERNOVA
+
+
+fusion:
+  method: COARSE_TIMES_CONDITIONAL_FINE
+
+  terminal_coarse_classes:
+    - CATACLYSMIC
+    - SUPERNOVA
+
+  validation:
+    require_finite_probabilities: true
+    require_nonnegative_probabilities: true
+    require_coarse_sum_to_one: true
+    require_each_fine_head_sum_to_one: true
+    require_leaf_sum_to_one: true
+
+runtime_requirements:
+  triton_server_version: TBD_FROM_SERVER
+  triton_container_image: TBD_FROM_SERVER
+  python_backend_version: TBD_FROM_SERVER
+  onnxruntime_version: TBD_FROM_SERVER
+
+contract_artifacts:
+  serving_contract:
+    file: serving-contract-v1.yaml
+    sha256: TBD_AFTER_FREEZE
+
+  triton_config:
+    file: variable_star_classifier/config.pbtxt
+    sha256: TBD_AFTER_RUNTIME_VERIFICATION
+
+  model_metadata_fixture:
+    file: fixtures/model-metadata.json
+    sha256: TBD_AFTER_RUNTIME_VERIFICATION
+
+  model_config_fixture:
+    file: fixtures/model-config.json
+    sha256: TBD_AFTER_RUNTIME_VERIFICATION
+
+  request_response_fixtures:
+    compute_current: TBD_AFTER_RUNTIME_VERIFICATION
+    reuse_previous: TBD_AFTER_RUNTIME_VERIFICATION
+    compute_bootstrap: TBD_AFTER_RUNTIME_VERIFICATION
+
+approval:
+  scientific_approval: PENDING
+  serving_contract_approval: PENDING
+  go_adapter_approval: PENDING
