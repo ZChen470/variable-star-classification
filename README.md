@@ -6,16 +6,17 @@
 
 ## 当前阶段
 
-阶段 1 至阶段 4 的最小工程闭环已经完成：
+阶段 1 至阶段 5 的最小工程闭环已经完成，阶段 5 已通过真实 Triton 服务器契约与三种模式推理验收：
 
 ```text
 阶段 1：工程仓库、Protobuf、确定性身份、分类器 Port 与基础 CI
 阶段 2：PostgreSQL Classification Repository 与 Kafka 基础设施
 阶段 3：CandidateEvent → ClassificationCommand 最小业务闭环
 阶段 4：固定 revision → 规范化 ClassificationInput 最小输入准备闭环
+阶段 5：Serving Bundle → Triton V2 HTTP → ClassificationOutput（S5-GO-01..08）
 ```
 
-阶段 4 当前形成：
+当前已形成：
 
 ```text
 ClassificationCommand 中的固定 object_id + light_curve_revision
@@ -26,35 +27,55 @@ LightCurveRevisionReader
         ↓
 机械合法性校验、复制和时间排序
         ↓
-ModelBundleResolver
-        ↓
-CoarseModeSelector
+ModelBundleResolver + CoarseModeSelector
         ↓
 ClassificationInput Builder
         ↓
 PreparedClassificationInput
+        ↓
+ServingBundleResolver + manifest-v2 Loader
+        ↓
+Triton Metadata / Config / Ready 契约门禁
+        ↓
+VariableStarClassifier Adapter
+        ↓
+Triton V2 HTTP + Binary Tensor
+        ↓
+ClassificationOutput
 ```
 
-阶段 4 已覆盖三条粗分类输入路径：
+当前覆盖三条粗分类路径：
 
 ```text
 3 <= n <= 20
 → COMPUTE_CURRENT
+→ Triton 内执行 XGBoost
 
 n > 20 且存在兼容历史粗概率
 → REUSE_PREVIOUS
+→ Triton 使用 REUSED_COARSE_PROBS
 
 n > 20 且明确不存在兼容历史粗概率
 → COMPUTE_BOOTSTRAP
+→ Triton 内执行 XGBoost
 ```
 
-真实上游 HTTP Adapter、真实 Kafka Broker 验证和独立服务器 PostgreSQL 验证仍保持 `DEFERRED`。
-
-下一开发阶段为：
+阶段 5 已完成：
 
 ```text
-阶段 5：Triton 推理闭环
+S5-GO-01 ServingBundleResolver Port + Fake
+S5-GO-02 model-bundle-manifest-v2 Loader
+S5-GO-03 Triton V2 HTTP Client
+S5-GO-04 Binary Tensor Codec
+S5-GO-05 Metadata / Config / Ready 契约门禁
+S5-GO-06 VariableStarClassifier Adapter
+S5-GO-07 HTTP Fake Server 推理夹具
+S5-GO-08 真实 Triton 契约、三种模式推理与服务器验收
 ```
+
+真实服务器已验证精确 Metadata、Config、Ready、Binary Tensor 推理和 `COMPUTE_CURRENT`、`REUSE_PREVIOUS`、`COMPUTE_BOOTSTRAP` 三种模式。下一开发阶段为阶段 6。
+
+真实上游 LightCurve HTTP Adapter、真实 Kafka Broker 验证和独立服务器 PostgreSQL 验证仍保持 `DEFERRED`。
 
 ## 当前范围
 
@@ -80,15 +101,26 @@ CoarseModeSelector
 ClassificationInput Builder
 ClassificationInputPreparer
 输入准备 Golden Vector 与确定性测试
+ServingBundleResolver Port 与 Fake
+model-bundle-manifest-v2 类型、加载与精确版本解析
+Triton V2 HTTP Client
+Triton Binary Tensor 编解码
+Triton Metadata / Config / Ready 契约门禁
+VariableStarClassifier Triton Adapter
+HTTP Fake Server 三种模式推理夹具与错误响应测试
+真实 Triton 服务器集成测试
+serving-contract-v1 与规范化 HTTP fixtures
+契约制品 SHA-256 完整性门禁
 ```
 
 当前阶段不包含：
 
 - 真实上游 LightCurve HTTP Adapter；
-- 运行时自动选择 latest revision；
+- 运行时自动选择 latest revision 或 latest 模型版本；
 - Go 侧 XGBoost 特征计算；
 - Go 侧 Transformer 标准化、分桶、padding 或 mask；
-- 真实 XGBoost、Transformer 或 Triton 推理；
+- 在 Go 仓库中保存 XGBoost、Transformer checkpoint、ONNX 或其他模型制品；
+- 自动重试、熔断、通用推理错误分类与可观测性；
 - 完整 ClassificationResult Worker；
 - ClassificationResult Writer；
 - Transactional Outbox；
@@ -110,7 +142,8 @@ ClassificationInputPreparer
 - `protoc-gen-go`：生成 Go Protobuf 代码；
 - Goose：验证 PostgreSQL migration；
 - PostgreSQL：执行 Repository 集成测试；
-- Kafka：执行真实 Broker 集成测试。
+- Kafka：执行真实 Broker 集成测试；
+- Triton Inference Server：执行阶段 5 真实模型契约与推理验收。
 
 ## Go Module
 
@@ -121,19 +154,23 @@ github.com/ZChen470/variable-star-classification
 ## 项目结构
 
 ```text
-api/proto/astro/classification/v1/     Protobuf v1 源文件
-gen/go/astro/classification/v1/        生成的 Go Protobuf 代码
-cmd/candidate-orchestrator/             Candidate 编排服务入口
-internal/domain/                       领域类型与确定性身份规则
-internal/application/                  应用 Port、业务用例与输入准备
-internal/adapter/postgres/             PostgreSQL Repository
-internal/adapter/kafka/                Kafka Publisher 与 Consumer Runner
-internal/testsupport/fakeclassifier/   Fake Classifier
-internal/testsupport/fakelightcurve/   Fake LightCurveRepository
-internal/testsupport/fakemodelbundle/  Fake ModelBundleResolver
-migrations/                            Goose SQL migration
-tests/                                 跨包测试
-docs/contracts/                        上下游契约文档
+api/proto/astro/classification/v1/      Protobuf v1 源文件
+gen/go/astro/classification/v1/         生成的 Go Protobuf 代码
+cmd/candidate-orchestrator/              Candidate 编排服务入口
+internal/domain/                         领域类型与确定性身份规则
+internal/application/                    应用 Port、业务用例、输入准备与 Serving Contract
+internal/adapter/postgres/               PostgreSQL Repository
+internal/adapter/kafka/                  Kafka Publisher 与 Consumer Runner
+internal/adapter/modelbundle/            Serving Bundle manifest-v2 Loader
+internal/adapter/triton/                 Triton HTTP、Binary Tensor、契约门禁与分类器 Adapter
+internal/testsupport/fakeclassifier/     Fake Classifier
+internal/testsupport/fakelightcurve/     Fake LightCurveRepository
+internal/testsupport/fakemodelbundle/    Fake ModelBundleResolver
+internal/testsupport/fakeservingbundle/  Fake ServingBundleResolver
+models/bundles/                          Manifest、Serving Contract 与 HTTP fixtures
+migrations/                              Goose SQL migration
+tests/                                   跨包测试
+docs/contracts/                          上下游契约文档
 ```
 
 ## 本地验证
@@ -254,6 +291,216 @@ ReusedCoarseProbabilities（可选）
 ```text
 internal/testsupport/fakeclassifier/
 ```
+
+## Triton Serving Bundle 与推理 Adapter
+
+### Serving Bundle 边界
+
+阶段 5 使用独立于阶段 4 `ModelBundleResolver` 的完整 Serving Resolver：
+
+```text
+internal/application/serving_bundle_resolver.go
+internal/testsupport/fakeservingbundle/
+```
+
+`ServingBundleResolver` 根据 Command 已绑定的 `model_bundle_version` 解析固定 Bundle 身份及入口元数据：
+
+```text
+模型 Bundle 与科学契约版本
+精确 model_name / model_version
+backend / protocol / max_batch_size
+输入输出 Tensor 契约
+7 / 10 / 12 维概率类别顺序
+```
+
+解析规则保持精确版本语义：
+
+- 不选择 latest；
+- 不 trim；
+- 不转换大小写；
+- 不改写请求版本；
+- 部署地址不进入 Bundle，由运行环境提供。
+
+文件加载器位于：
+
+```text
+internal/adapter/modelbundle/serving_manifest.go
+models/bundles/model-bundle-manifest-v2.yaml
+```
+
+当前加载器使用严格 YAML 字段解析，拒绝多文档，并校验 v2 schema、manifest 状态、Bundle 身份、统一入口模型名和 Python backend。真实运行时契约由 Triton 启动门禁继续验证。
+
+### 统一 Triton 入口
+
+第一版统一入口固定为：
+
+```text
+model_name: variable_star_classifier
+model_version: 1
+protocol: triton-v2-http
+max_batch_size: 0
+binary_tensor_data: true
+```
+
+Go → Triton 输入：
+
+```text
+TIME_MJD                 FP64  [N]
+MAGNITUDE                FP32  [N]
+MAGNITUDE_ERROR          FP32  [N]
+COARSE_MODE              INT32 [1]
+REUSED_COARSE_PROBS      FP32  [7]
+```
+
+Triton → Go 输出：
+
+```text
+COARSE_PROBS             FP32 [7]
+FINE_CONDITIONAL_PROBS   FP32 [10]
+LEAF_PROBS               FP32 [12]
+XGBOOST_EXECUTED         BOOL [1]
+```
+
+`REUSED_COARSE_PROBS` 始终存在：
+
+- `REUSE_PREVIOUS` 发送七维历史粗概率；
+- `COMPUTE_CURRENT` 和 `COMPUTE_BOOTSTRAP` 发送七维全零占位；
+- 不使用 optional Tensor。
+
+概率数组顺序由 Serving Bundle 契约固定。Go Adapter 不根据模型内部实现推断类别，也不对输出做隐藏重排。
+
+### Triton V2 HTTP 与 Binary Tensor
+
+HTTP Client 和 Binary Tensor Codec 位于：
+
+```text
+internal/adapter/triton/client.go
+internal/adapter/triton/binary_tensor.go
+```
+
+精确版本端点：
+
+```text
+GET  /v2/models/{model_name}/versions/{model_version}
+GET  /v2/models/{model_name}/versions/{model_version}/config
+GET  /v2/models/{model_name}/versions/{model_version}/ready
+POST /v2/models/{model_name}/versions/{model_version}/infer
+```
+
+推理请求使用：
+
+```text
+Content-Type: application/octet-stream
+Inference-Header-Content-Length: <JSON header bytes>
+Body: JSON header + little-endian tensor bytes
+```
+
+Codec 支持当前契约使用的 `FP64`、`FP32`、`INT32` 和 `BOOL`，校验 shape、元素字节数、重复 Tensor、响应边界和尾随字节。响应按 JSON `outputs` 中的实际顺序切分二进制区；业务 Adapter 再按输出名称映射，不依赖服务端返回顺序。
+
+HTTP Client：
+
+- 使用调用方传入的 Context；
+- 使用注入的 `http.Client`；
+- 限制最大响应体；
+- 保留非 2xx 状态码、响应 Header 和 Body；
+- 当前不内置重试策略。
+
+### 启动契约门禁
+
+契约门禁位于：
+
+```text
+internal/adapter/triton/contract_gate.go
+```
+
+启动时检查精确版本的：
+
+```text
+Ready
+Model Metadata
+Model Config
+```
+
+当前校验包括：
+
+- 精确模型名称和版本；
+- Python backend；
+- `max_batch_size = 0`；
+- 五个输入和四个输出；
+- Tensor 名称、顺序、datatype 和 dims；
+- 输入 optional/required 语义。
+
+这些检查已经通过单元测试、CI 和真实 Triton `2.67.0` 服务器验收；运行时必须使用精确模型版本，不回退到 latest。
+
+### VariableStarClassifier Adapter
+
+生产 Adapter 位于：
+
+```text
+internal/adapter/triton/classifier.go
+```
+
+职责：
+
+```text
+ClassificationInput
+→ 五个 Binary Tensor
+→ 精确版本 Triton infer
+→ 解码四个输出
+→ ClassificationOutput
+```
+
+应用层已经负责 epoch 数量、序列一致性、有限值、误差正值、时间排序和重复时间拒绝。Triton Adapter 不重复这些机械校验，只检查影响 Wire Mapping 的模式组合：
+
+- `REUSE_PREVIOUS` 必须携带历史粗概率；
+- `COMPUTE_CURRENT` 和 `COMPUTE_BOOTSTRAP` 不得携带历史粗概率；
+- 未知模式拒绝；
+- `XGBOOST_EXECUTED` 必须与模式一致。
+
+### HTTP 推理夹具
+
+HTTP Fake Server 测试位于：
+
+```text
+internal/adapter/triton/classifier_http_fixture_test.go
+```
+
+已经覆盖：
+
+- `COMPUTE_CURRENT`；
+- `REUSE_PREVIOUS`；
+- `COMPUTE_BOOTSTRAP`；
+- 真实 Go HTTP 请求链路；
+- Binary Tensor JSON Header 与二进制 Body；
+- 服务端输出乱序；
+- Triton 400 与 503 响应传播；
+- 缺失 Header 长度和截断二进制响应拒绝。
+
+这些夹具验证 Go 侧协议与映射，不单独代表真实模型科学结果或服务器环境验收。
+
+### 真实 Triton 服务器验证
+
+真实服务器集成测试位于：
+
+```text
+internal/adapter/triton/server_integration_test.go
+```
+
+默认测试会跳过真实服务器，通过以下环境变量显式启用：
+
+```powershell
+$env:VSC_TRITON_INTEGRATION='1'; $env:VSC_TRITON_BASE_URL='<triton-base-url>'; go test ./internal/adapter/triton -run '^TestTritonServerIntegration$' -count=1 -v
+```
+
+服务器验收已经覆盖：
+
+- 精确 `variable_star_classifier:1` Metadata、Config 和深度 Ready；
+- `COMPUTE_CURRENT`、`REUSE_PREVIOUS` 和 `COMPUTE_BOOTSTRAP`；
+- 7/10/12 概率输出及 `XGBOOST_EXECUTED`；
+- 输入反序等价性与重复时间拒绝；
+- GPU FP32 数值容差和重复推理确定性。
+
+生产地址属于部署配置，不写入 Bundle 或 README。Go 仓库只保存 Serving Contract、规范化 HTTP fixtures 及其 SHA-256。
 
 ## 固定 LightCurveRevision 输入准备
 
@@ -400,7 +647,7 @@ Resolver 必须精确解析 Command 已绑定的版本：
 - 不转换大小写；
 - 返回的 `model_bundle_version` 必须与请求一致。
 
-完整 manifest loader、模型文件 checksum 和 Triton 入口校验属于阶段 5。
+阶段 5 已新增独立 `ServingBundleResolver`、manifest-v2 Loader 和 Triton 入口契约门禁；阶段 4 的最小 `ModelBundleResolver` 保持不变。Serving Contract、HTTP fixtures 与运行时制品摘要已经冻结并通过服务器验证，模型权重仍由外部 Triton 模型仓库管理。
 
 ## 粗分类模式选择
 
@@ -534,7 +781,7 @@ COMPUTE_BOOTSTRAP
 - Fake Repository 的固定响应不被调用方修改；
 - `Revision`、`Selection` 与 `ClassificationInput` 的可变数据互不共享。
 
-这些测试冻结的是阶段 4 的结构和确定性，不代表训练端特征、Tensor 或模型概率 Golden。模型侧科学 Golden 属于阶段 5。
+这些测试冻结的是阶段 4 的结构和确定性。阶段 5 已补充 Tensor Wire Mapping、HTTP fixtures 和真实 Triton 参考输出验证；正式 science-benchmark-v1 与科学审批仍保持 `PENDING_FORMAL_BENCHMARK`。
 
 ## PostgreSQL 存储
 
@@ -687,10 +934,19 @@ PowerShell 示例：
 | ClassificationInput Builder | `VERIFIED_CI` |
 | ClassificationInputPreparer | `VERIFIED_CI` |
 | 输入准备 Golden 与确定性测试 | `VERIFIED_CI` |
+| ServingBundleResolver Port 与 Fake | `VERIFIED_CI` |
+| model-bundle-manifest-v2 Loader | `VERIFIED_CI` |
+| Triton V2 HTTP Client | `VERIFIED_CI` |
+| Triton Binary Tensor Codec | `VERIFIED_CI` |
+| Triton Metadata / Config / Ready 契约门禁 | `VERIFIED_CI` |
+| VariableStarClassifier Triton Adapter | `VERIFIED_CI` |
+| HTTP Fake Server 推理夹具 | `VERIFIED_CI` |
+| Serving Contract 与 fixture SHA-256 完整性门禁 | `VERIFIED_CI` |
+| 真实 Triton 精确版本契约验收 | `VERIFIED_SERVER` |
+| 真实 Triton 三模式单任务推理 | `VERIFIED_SERVER` |
 | 真实 LightCurve HTTP Adapter | `DEFERRED` |
 | 真实 Kafka Broker 集成测试 | `DEFERRED` |
-| Triton 推理 | `NOT_STARTED` |
-| 完整 ClassificationResult Writer | `NOT_STARTED` |
+| 完整 ClassificationResult Worker / Writer | `NOT_STARTED` |
 
 状态含义：
 
@@ -703,6 +959,8 @@ DEFERRED         已明确延后
 NOT_STARTED      尚未开始
 ```
 
+阶段 5 工程状态为 `VERIFIED_SERVER`，Serving Contract 和 Go Adapter 已接受。Manifest 继续保持 `DRAFT`，唯一未完成项是正式科学基准与 `scientific_approval`。
+
 ## 阶段边界
 
 阶段 1 已完成工程基础、Protobuf、确定性身份和分类器 Port。
@@ -713,24 +971,28 @@ NOT_STARTED      尚未开始
 
 阶段 4 已完成固定 revision 到规范化 `ClassificationInput` 的最小输入准备闭环。
 
+阶段 5 已完成 Serving Bundle 解析、Triton V2 HTTP、Binary Tensor、启动契约门禁、VariableStarClassifier Adapter、HTTP fixtures 和真实 Triton 服务器验收。阶段 5 工程闭环已经关闭，正式科学基准作为独立待办保留。
+
 后续阶段：
 
 ```text
-阶段 5：Triton 模型入口、输入契约校验、推理与概率结果
 阶段 6：ClassificationResult → ClassificationRun → CurrentClassification
 阶段 7：查询 API、GUI 与人工复核
 阶段 8：可靠性、可观测性与安全
 阶段 9：Kubernetes 生产化
 ```
 
-阶段 4 保持以下边界：
+当前保持以下边界：
 
-- 不读取 latest；
+- 不读取 latest revision；
+- 不自动选择 latest 模型版本；
 - 不虚构上游数据库表或账号；
-- 不实现真实 HTTP Adapter；
-- 不执行 XGBoost 特征计算；
-- 不执行 Transformer Tensor 构造；
-- 不调用 Triton；
-- 不发布 ClassificationResult；
-- 不写入 ClassificationRun；
-- 不更新 CurrentClassification。
+- 不实现真实 LightCurve HTTP Adapter；
+- Go 不执行 XGBoost 特征计算；
+- Go 不执行 Transformer 标准化、分桶、padding 或 mask；
+- Triton 统一入口内部负责科学预处理、XGBoost、Transformer 与概率融合；
+- 模型权重和 ONNX 制品不提交到 Go 仓库；
+- 当前不实现推理自动重试、熔断和通用错误分类；
+- 当前不发布 ClassificationResult；
+- 当前不写入 ClassificationRun；
+- 当前不更新 CurrentClassification。

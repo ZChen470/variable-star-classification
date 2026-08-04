@@ -23,7 +23,7 @@ triton_entrypoint:
   protocol: triton-v2-http
   binary_tensor_data: true
 
-  runtime_verification_status: PENDING
+  runtime_verification_status: VERIFIED_SERVER
   config_path: variable_star_classifier/config.pbtxt
   implementation_path: variable_star_classifier/1/model.py
 
@@ -102,7 +102,7 @@ coarse_modes:
 preprocessing:
   input_order:
     expected: STRICTLY_INCREASING_TIME_MJD
-    sorting_performed_by_triton: false
+    sorting_performed_by_triton: true
     reject_duplicate_time_mjd: true
 
   execution_location: VARIABLE_STAR_CLASSIFIER_PYTHON_BACKEND
@@ -164,20 +164,13 @@ xgboost:
     execution_location: VARIABLE_STAR_CLASSIFIER_PYTHON_BACKEND
     feature_count: 57
     feature_schema_version: xgb-feature-schema-v1
-    feature_order_verification_status: PENDING_TRAINING_DATA_CONFIRMATION
+    feature_order_verification_status: VERIFIED_FROM_SERVING_IMPLEMENTATION
 
   scaler:
-    required: true
-    implementation: sklearn.preprocessing.StandardScaler
-    artifact_file: TBD_FROM_TRAINING
-    artifact_sha256: TBD_FROM_TRAINING
-    sklearn_version: TBD_FROM_TRAINING
-    fitted_feature_count: 57
-
-    required_state:
-      - mean_
-      - scale_
-      - n_features_in_
+    required: false
+    implementation: NONE
+    verification_status: CONFIRMED_FROM_TRAINING_OWNER
+    input_representation: RAW_57_FEATURE_VECTOR
 
   classifier:
     model_name: xgb_coarse
@@ -192,7 +185,7 @@ xgboost:
     output_class_count: 7
 
   coarse_class_order:
-    verification_status: PENDING_LABEL_ENCODER_CONFIRMATION
+    verification_status: VERIFIED_FROM_TRAINING_AND_RUNTIME
 
     expected_order:
       - ROTATING
@@ -203,7 +196,7 @@ xgboost:
       - RR_LYRAE
       - SUPERNOVA
 
-  coarse_compatibility_id: TBD_AFTER_SCALER_AND_LABEL_ORDER_VERIFICATION
+  coarse_compatibility_id: xgb-coarse-raw57-taxonomy-v1
 
 transformer:
   model_name: transformer_multihead
@@ -214,8 +207,8 @@ transformer:
 
   exported_artifact:
     file: model.onnx
-    sha256: TBD_AFTER_EXPORT
-    verification_status: PENDING_EXPORT
+    sha256: 4f1d6ffc13f4d893bad2ecf4e155a7fac672e34b559127c5b4d421cdab6f2458
+    verification_status: VERIFIED_SERVER
 
   input_contract:
     time_values: PREPROCESSED_AND_PADDED
@@ -311,34 +304,63 @@ fusion:
     require_leaf_sum_to_one: true
 
 runtime_requirements:
-  triton_server_version: TBD_FROM_SERVER
-  triton_container_image: TBD_FROM_SERVER
-  python_backend_version: TBD_FROM_SERVER
-  onnxruntime_version: TBD_FROM_SERVER
+  triton_server_version: "2.67.0"
+  triton_base_image: nvcr.io/nvidia/tritonserver:26.03-py3
+  triton_container_image: variable-star-triton:26.03-py312-v1
+
+  python_version: "3.12.3"
+  numpy_version: "1.26.4"
+  pandas_version: "2.1.4"
+  scipy_version: "1.11.4"
+  astropy_version: "6.1.4"
+
+  onnxruntime_backend: BUNDLED_WITH_TRITON_2.67.0
+
+  verified_hardware:
+    gpu_model: NVIDIA RTX A6000
+    compute_capability: "8.6"
+    host_driver_version: "580.105.08"
 
 contract_artifacts:
   serving_contract:
     file: serving-contract-v1.yaml
-    sha256: TBD_AFTER_FREEZE
+    sha256: 63041da2cf4fd8630b0dbf99047ecfd100539b73b2c28f7dc48a856eb5ec5e10
 
   triton_config:
     file: variable_star_classifier/config.pbtxt
-    sha256: TBD_AFTER_RUNTIME_VERIFICATION
+    sha256: 8a08a5d419537ce45607f49e125b68626483bf6eb6db577c19dba188d980bd74
 
   model_metadata_fixture:
     file: fixtures/model-metadata.json
-    sha256: TBD_AFTER_RUNTIME_VERIFICATION
+    sha256: 51cd2add8136d6e3c8d9f365a986957092292365f3a8925b9105eca974b9b084
 
   model_config_fixture:
     file: fixtures/model-config.json
-    sha256: TBD_AFTER_RUNTIME_VERIFICATION
+    sha256: 21fdc1011e1ed17c6bea05ef1a31f5393335cd57d70d8888ada029a4af5f3843
 
   request_response_fixtures:
-    compute_current: TBD_AFTER_RUNTIME_VERIFICATION
-    reuse_previous: TBD_AFTER_RUNTIME_VERIFICATION
-    compute_bootstrap: TBD_AFTER_RUNTIME_VERIFICATION
+    compute_current:
+      request_file: fixtures/compute-current-request.json
+      request_sha256: 41db2b5768785fd0a6011bbdd0a5d4f4e9870be2792508e7cd62f5dd23291da0
+      response_file: fixtures/compute-current-response.json
+      response_sha256: 597f6bc799cba73413f1f1206ec21fd22ea4217059fefb4860eb27885ef4959d
+      verification_status: VERIFIED_SERVER
+
+    reuse_previous:
+      request_file: fixtures/reuse-previous-request.json
+      request_sha256: 388f56a322b0638fa7026780cb1ef9f882e06ee71e977e5dbc7d98c12299f31c
+      response_file: fixtures/reuse-previous-response.json
+      response_sha256: b85ea6e55c1940effb52fb7bf7497adddb48381be019bab44484325b307f9b88
+      verification_status: VERIFIED_SERVER
+
+    compute_bootstrap:
+      request_file: fixtures/compute-bootstrap-request.json
+      request_sha256: d2885ff1e5b1268104ed3c69b7a8eea1430284dead953290a304d07286d86746
+      response_file: fixtures/compute-bootstrap-response.json
+      response_sha256: 5796ef2e730b189981044ecaa3704398ffe81dc81e88340857557d718f80925c
+      verification_status: VERIFIED_SERVER
 
 approval:
-  scientific_approval: PENDING
-  serving_contract_approval: PENDING
-  go_adapter_approval: PENDING
+  scientific_approval: PENDING_FORMAL_BENCHMARK
+  serving_contract_approval: ACCEPTED_VERIFIED_SERVER
+  go_adapter_approval: ACCEPTED_VERIFIED_SERVER_AND_CI

@@ -1,0 +1,345 @@
+schema_version: variable-star-serving-contract-v1
+contract_version: variable-star-serving-contract-v1
+contract_status: FROZEN
+
+bundle_binding:
+  model_bundle_version: variable-classifier-2026-07-003
+  taxonomy_version: taxonomy-v1
+  classification_policy_version: classification-policy-v1
+  feature_schema_version: xgb-feature-schema-v1
+  preprocessing_version: transformer-preprocessing-v2
+  tensor_schema_version: transformer-tensor-schema-v2
+  fusion_contract_version: hierarchical-fusion-v1
+
+public_model:
+  model_name: variable_star_classifier
+  model_version: "1"
+  backend: python
+  max_batch_size: 0
+  model_control: exact_version_only
+  latest_version_fallback: false
+
+protocol:
+  name: triton-v2-http
+  infer_path: /v2/models/{model_name}/versions/{model_version}/infer
+  metadata_path: /v2/models/{model_name}/versions/{model_version}
+  config_path: /v2/models/{model_name}/versions/{model_version}/config
+  readiness_path: /v2/models/{model_name}/versions/{model_version}/ready
+  binary_tensor_data: true
+  content_type: application/octet-stream
+  inference_header_content_length_header: Inference-Header-Content-Length
+  binary_byte_order: little_endian
+  error_response:
+    content_type: application/json
+    body_shape:
+      error: string
+
+inputs:
+  - name: TIME_MJD
+    datatype: FP64
+    dims: [-1]
+    required: true
+    semantics: raw_mjd
+
+  - name: MAGNITUDE
+    datatype: FP32
+    dims: [-1]
+    required: true
+    semantics: raw_magnitude
+
+  - name: MAGNITUDE_ERROR
+    datatype: FP32
+    dims: [-1]
+    required: true
+    semantics: raw_positive_magnitude_error
+
+  - name: COARSE_MODE
+    datatype: INT32
+    dims: [1]
+    required: true
+
+  - name: REUSED_COARSE_PROBS
+    datatype: FP32
+    dims: [7]
+    required: true
+    semantics: used_only_by_reuse_previous
+
+outputs:
+  - name: COARSE_PROBS
+    datatype: FP32
+    dims: [7]
+
+  - name: FINE_CONDITIONAL_PROBS
+    datatype: FP32
+    dims: [10]
+
+  - name: LEAF_PROBS
+    datatype: FP32
+    dims: [12]
+
+  - name: XGBOOST_EXECUTED
+    datatype: BOOL
+    dims: [1]
+
+coarse_modes:
+  datatype: INT32
+  values:
+    UNSPECIFIED: 0
+    COMPUTE_CURRENT: 1
+    REUSE_PREVIOUS: 2
+    COMPUTE_BOOTSTRAP: 3
+
+  rules:
+    - mode: UNSPECIFIED
+      accepted: false
+
+    - mode: COMPUTE_CURRENT
+      allowed_actual_length: "3..20"
+      execute_xgboost: true
+      reused_coarse_probs: required_placeholder_ignored
+      xgboost_executed_output: true
+
+    - mode: REUSE_PREVIOUS
+      allowed_actual_length: "21..1024"
+      execute_xgboost: false
+      reused_coarse_probs: validate_and_use
+      xgboost_executed_output: false
+
+    - mode: COMPUTE_BOOTSTRAP
+      allowed_actual_length: "21..1024"
+      execute_xgboost: true
+      reused_coarse_probs: required_placeholder_ignored
+      xgboost_executed_output: true
+
+light_curve_validation:
+  minimum_sequence_length: 3
+  maximum_sequence_length: 1024
+  truncate_overlength_input: false
+  require_equal_vector_lengths: true
+  require_finite_time_mjd: true
+  require_finite_magnitude: true
+  require_finite_magnitude_error: true
+  require_positive_magnitude_error: true
+
+  caller_ordering:
+    fields: [TIME_MJD]
+    order: ascending
+    stability: stable
+
+  server_defensive_ordering:
+    enabled: true
+    fields: [TIME_MJD]
+    order: ascending
+    stability: stable
+
+  duplicate_policy:
+    key: TIME_MJD
+    action: reject
+    silent_deduplication: false
+
+transformer_preprocessing:
+  execution_location: variable_star_classifier_python_backend
+  outside_exported_onnx_graph: true
+
+  time:
+    origin_formula: floor(min(TIME_MJD)) - 1
+    normalized_formula: TIME_MJD - time_origin
+    output_datatype: FP32
+
+  magnitude:
+    center_formula: MAGNITUDE - mean(MAGNITUDE)
+    mean_accumulation_datatype: FP32
+    output_datatype: FP32
+
+  length_buckets: [32, 64, 128, 256, 512, 768, 1024]
+  bucket_selection: first_bucket_greater_than_or_equal_to_actual_length
+
+  padding:
+    time_value: 0.0
+    magnitude_value: 0.0
+
+  attention_mask:
+    datatype: FP32
+    shape: [1, bucket_length]
+    valid_epoch_value: 1.0
+    padding_value: 0.0
+    generation: actual_sequence_length
+
+  exported_graph:
+    inputs:
+      - name: TIME_VALUES
+        datatype: FP32
+        shape: [batch_size, bucket_length]
+      - name: MAGNITUDE_VALUES
+        datatype: FP32
+        shape: [batch_size, bucket_length]
+      - name: ATTENTION_MASK
+        datatype: FP32
+        shape: [batch_size, bucket_length]
+    output:
+      name: FINE_CONDITIONAL_PROBS
+      datatype: FP32
+      shape: [batch_size, 10]
+    softmax_location: exported_wrapper_graph
+
+xgboost:
+  feature_count: 57
+  feature_schema_version: xgb-feature-schema-v1
+  feature_representation: raw_unscaled
+  scaler_required: false
+  feature_extraction_location: variable_star_classifier_python_backend
+  classifier_model_name: xgb_coarse
+  classifier_model_version: "1"
+  classifier_backend: fil
+  objective: multi:softprob
+  coarse_compatibility_id: xgb-coarse-raw57-taxonomy-v1
+
+internal_models:
+  - model_name: xgb_feature_extractor
+    model_version: "1"
+    required_ready: true
+
+  - model_name: xgb_coarse
+    model_version: "1"
+    required_ready: true
+
+  - model_name: transformer_multihead
+    model_version: "1"
+    required_ready: true
+
+readiness:
+  public_model_deep_readiness: true
+  behavior: not_ready_if_any_exact_internal_model_version_is_not_ready
+
+probability_orders:
+  coarse:
+    - ROTATING
+    - CATACLYSMIC
+    - ECLIPSING_BINARY
+    - LONG_PERIOD
+    - PULSATING
+    - RR_LYRAE
+    - SUPERNOVA
+
+  fine_conditional:
+    - EW
+    - EA
+    - BY_DRA
+    - RS_CVN
+    - RRAB
+    - RRC
+    - SR
+    - MIRA
+    - DSCT
+    - CEP
+
+  leaf:
+    - EW
+    - EA
+    - BY_DRA
+    - RS_CVN
+    - RRAB
+    - RRC
+    - SR
+    - MIRA
+    - DSCT
+    - CEP
+    - CATACLYSMIC
+    - SUPERNOVA
+
+fine_probability_pairs:
+  - parent: ECLIPSING_BINARY
+    classes: [EW, EA]
+  - parent: ROTATING
+    classes: [BY_DRA, RS_CVN]
+  - parent: RR_LYRAE
+    classes: [RRAB, RRC]
+  - parent: LONG_PERIOD
+    classes: [SR, MIRA]
+  - parent: PULSATING
+    classes: [DSCT, CEP]
+
+fusion:
+  method: coarse_times_conditional_fine
+  terminal_coarse_classes: [CATACLYSMIC, SUPERNOVA]
+  terminal_leaf_probability_source: corresponding_coarse_probability
+  renormalize_output: false
+
+probability_validation:
+  require_finite: true
+  accepted_range: [0.0, 1.0]
+  coarse_sum:
+    expected: 1.0
+    rtol: 1.0e-5
+    atol: 1.0e-6
+  each_fine_pair_sum:
+    expected: 1.0
+    rtol: 1.0e-5
+    atol: 1.0e-6
+  leaf_sum:
+    expected: 1.0
+    rtol: 1.0e-5
+    atol: 1.0e-6
+
+runtime_verification:
+  status: VERIFIED_SERVER
+  triton_server_version: "2.67.0"
+  triton_image: variable-star-triton:26.03-py312-v1
+  python_version: "3.12.3"
+  gpu_model: NVIDIA RTX A6000
+  compute_capability: "8.6"
+  host_driver_version: "580.105.08"
+  model_repository_release: b4e811dc99cb-final-d4f0cd7f98bd-timeorder-7bd80afc87bf
+  pipeline_sha256: 7bd80afc87bf10950f523ea6373240e6e1c2da318e253a7e9c1896bd1021d397
+  repeated_inference_determinism: bitwise_stable_across_five_runs
+  reference_verification:
+    compute_current: passed
+    compute_bootstrap: passed
+    reuse_previous: passed
+    reversed_input_order_equivalence: passed
+    duplicate_time_rejection: passed
+
+numerical_acceptance:
+  triton_gpu_fp32:
+    coarse_probabilities:
+      rtol: 1.0e-5
+      atol: 1.0e-6
+    fine_conditional_probabilities:
+      rtol: 2.0e-3
+      atol: 2.0e-6
+    leaf_probabilities:
+      rtol: 2.0e-3
+      atol: 2.0e-6
+
+error_semantics:
+  reject_request_on:
+    - missing_required_input
+    - invalid_input_rank_or_shape
+    - unequal_light_curve_vector_lengths
+    - nonfinite_input_value
+    - nonpositive_magnitude_error
+    - duplicate_time_mjd
+    - sequence_length_outside_3_to_1024
+    - invalid_or_length_incompatible_coarse_mode
+    - invalid_reused_coarse_probabilities
+    - internal_model_failure
+    - invalid_internal_output_shape
+    - invalid_probability_range_or_sum
+  silent_deduplication: false
+  silent_truncation: false
+  latest_model_version_fallback: false
+  probability_renormalization: false
+
+artifacts:
+  triton_config:
+    file: variable_star_classifier/config.pbtxt
+    sha256: 8a08a5d419537ce45607f49e125b68626483bf6eb6db577c19dba188d980bd74
+  metadata_fixture: fixtures/model-metadata.json
+  config_fixture: fixtures/model-config.json
+  request_response_fixtures:
+    - fixtures/compute-current-request.json
+    - fixtures/compute-current-response.json
+    - fixtures/compute-bootstrap-request.json
+    - fixtures/compute-bootstrap-response.json
+    - fixtures/reuse-previous-request.json
+    - fixtures/reuse-previous-response.json
