@@ -145,7 +145,7 @@ func validateExpectedEntrypoint(expected application.ServingEntrypointMetadata) 
 		return errors.New("backend is empty")
 	}
 	if expected.Protocol != application.ServingProtocolTritonV2HTTP {
-		return fmt.Errorf("max_batch_size=%d, want 0", expected.MaxBatchSize)
+		return fmt.Errorf("protocol=%q, want %q", expected.Protocol, application.ServingProtocolTritonV2HTTP)
 	}
 	if !expected.BinaryTensorData {
 		return errors.New("binary tensor data must be enabled")

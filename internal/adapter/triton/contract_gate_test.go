@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/ZChen470/variable-star-classification/internal/application"
@@ -234,6 +235,25 @@ func TestNewModelContractGateRejectsNilClient(t *testing.T) {
 		t.Fatalf(
 			"error = %v, want ErrInvalidModelContractGate",
 			err,
+		)
+	}
+}
+
+func TestValidateExpectedEntrypointReportsProtocolMismatch(t *testing.T) {
+	expected := expectedEntrypoint()
+	expected.Protocol = application.ServingProtocol("grpc")
+
+	err := validateExpectedEntrypoint(expected)
+	if err == nil {
+		t.Fatal("validateExpectedEntrypoint() error = nil")
+	}
+
+	const expectedMessage = `protocol="grpc", want "triton-v2-http"`
+	if !strings.Contains(err.Error(), expectedMessage) {
+		t.Fatalf(
+			"validateExpectedEntrypoint() error = %q, want it to contain %q",
+			err,
+			expectedMessage,
 		)
 	}
 }
