@@ -38,9 +38,7 @@ type CompatibleCoarseQuery struct {
 
 	TargetLightCurveRevision int64
 
-	TaxonomyVersion      string
-	XGBoostModelVersion  string
-	FeatureSchemaVersion string
+	ModelBundleVersion string
 }
 
 // CompatibleCoarseResult 是建立 REUSED_PREVIOUS 来源所需的最小历史信息。

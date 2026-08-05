@@ -222,50 +222,38 @@ func TestClassificationRepositoryIntegration(t *testing.T) {
 			objectID:        base.ObjectID,
 			revision:        31,
 			mode:            domain.ExecutionModeShadow,
-			bundleVersion:   "bundle-shadow",
+			bundleVersion:   base.Versions.ModelBundleVersion,
 			xgboostExecuted: true,
 		})
 		requireSaveResult(t, repository, latestCompatible, true, false)
 
-		// 该 Run 版本兼容，但没有实际执行 XGBoost，不能成为来源。
+		// 同一 Bundle 但没有实际执行 XGBoost，不能成为来源。
 		reused := newTestClassificationRun(t, testRunSpec{
 			objectID:        base.ObjectID,
 			revision:        32,
 			mode:            domain.ExecutionModeProduction,
-			bundleVersion:   "bundle-reused",
+			bundleVersion:   base.Versions.ModelBundleVersion,
 			xgboostExecuted: false,
 			source:          &latestCompatible,
 		})
 		requireSaveResult(t, repository, reused, true, true)
 
-		incompatibleXGBoost := newTestClassificationRun(t, testRunSpec{
-			objectID:            base.ObjectID,
-			revision:            33,
-			mode:                domain.ExecutionModeProduction,
-			bundleVersion:       "bundle-xgb-v2",
-			xgboostModelVersion: "xgb-v2",
-			xgboostExecuted:     true,
+		// 不同 Bundle 即使执行过 XGBoost，也不兼容。
+		incompatibleBundle := newTestClassificationRun(t, testRunSpec{
+			objectID:        base.ObjectID,
+			revision:        33,
+			mode:            domain.ExecutionModeProduction,
+			bundleVersion:   "bundle-other",
+			xgboostExecuted: true,
 		})
-		requireSaveResult(t, repository, incompatibleXGBoost, true, true)
-
-		incompatibleFeature := newTestClassificationRun(t, testRunSpec{
-			objectID:             base.ObjectID,
-			revision:             34,
-			mode:                 domain.ExecutionModeProduction,
-			bundleVersion:        "bundle-feature-v2",
-			featureSchemaVersion: "feature-v2",
-			xgboostExecuted:      true,
-		})
-		requireSaveResult(t, repository, incompatibleFeature, true, true)
+		requireSaveResult(t, repository, incompatibleBundle, true, true)
 
 		result, err := repository.FindLatestCompatibleCoarse(
 			ctx,
 			application.CompatibleCoarseQuery{
 				ObjectID:                 base.ObjectID,
-				TargetLightCurveRevision: 35,
-				TaxonomyVersion:          "taxonomy-v1",
-				XGBoostModelVersion:      "xgb-v1",
-				FeatureSchemaVersion:     "feature-v1",
+				TargetLightCurveRevision: 34,
+				ModelBundleVersion:       base.Versions.ModelBundleVersion,
 			},
 		)
 		if err != nil {
@@ -305,9 +293,7 @@ func TestClassificationRepositoryIntegration(t *testing.T) {
 			application.CompatibleCoarseQuery{
 				ObjectID:                 base.ObjectID,
 				TargetLightCurveRevision: 31,
-				TaxonomyVersion:          "taxonomy-v1",
-				XGBoostModelVersion:      "xgb-v1",
-				FeatureSchemaVersion:     "feature-v1",
+				ModelBundleVersion:       base.Versions.ModelBundleVersion,
 			},
 		)
 		if err != nil {
@@ -330,39 +316,15 @@ func TestClassificationRepositoryIntegration(t *testing.T) {
 				query: application.CompatibleCoarseQuery{
 					ObjectID:                 base.ObjectID,
 					TargetLightCurveRevision: 30,
-					TaxonomyVersion:          "taxonomy-v1",
-					XGBoostModelVersion:      "xgb-v1",
-					FeatureSchemaVersion:     "feature-v1",
+					ModelBundleVersion:       base.Versions.ModelBundleVersion,
 				},
 			},
 			{
-				name: "taxonomy mismatch",
+				name: "model bundle mismatch",
 				query: application.CompatibleCoarseQuery{
 					ObjectID:                 base.ObjectID,
-					TargetLightCurveRevision: 35,
-					TaxonomyVersion:          "taxonomy-v2",
-					XGBoostModelVersion:      "xgb-v1",
-					FeatureSchemaVersion:     "feature-v1",
-				},
-			},
-			{
-				name: "XGBoost version mismatch",
-				query: application.CompatibleCoarseQuery{
-					ObjectID:                 base.ObjectID,
-					TargetLightCurveRevision: 35,
-					TaxonomyVersion:          "taxonomy-v1",
-					XGBoostModelVersion:      "xgb-v9",
-					FeatureSchemaVersion:     "feature-v1",
-				},
-			},
-			{
-				name: "feature schema mismatch",
-				query: application.CompatibleCoarseQuery{
-					ObjectID:                 base.ObjectID,
-					TargetLightCurveRevision: 35,
-					TaxonomyVersion:          "taxonomy-v1",
-					XGBoostModelVersion:      "xgb-v1",
-					FeatureSchemaVersion:     "feature-v9",
+					TargetLightCurveRevision: 34,
+					ModelBundleVersion:       "bundle-missing",
 				},
 			},
 		}
@@ -393,10 +355,7 @@ type testRunSpec struct {
 	revision int64
 	mode     domain.ExecutionMode
 
-	bundleVersion        string
-	taxonomyVersion      string
-	xgboostModelVersion  string
-	featureSchemaVersion string
+	bundleVersion string
 
 	xgboostExecuted bool
 	source          *domain.ClassificationRun
@@ -410,15 +369,6 @@ func newTestClassificationRun(
 
 	if spec.bundleVersion == "" {
 		spec.bundleVersion = "bundle-v1"
-	}
-	if spec.taxonomyVersion == "" {
-		spec.taxonomyVersion = "taxonomy-v1"
-	}
-	if spec.xgboostModelVersion == "" {
-		spec.xgboostModelVersion = "xgb-v1"
-	}
-	if spec.featureSchemaVersion == "" {
-		spec.featureSchemaVersion = "feature-v1"
 	}
 
 	const policyVersion = "classification-policy-v1"
@@ -459,13 +409,6 @@ func newTestClassificationRun(
 		sourceRunID = &copiedSourceRunID
 	}
 
-	xgboostInferenceMS := uint64(5)
-	totalMS := uint64(20)
-	if !spec.xgboostExecuted {
-		xgboostInferenceMS = 0
-		totalMS = 15
-	}
-
 	return domain.ClassificationRun{
 		RunID:               runID,
 		JobID:               jobID,
@@ -483,11 +426,9 @@ func newTestClassificationRun(
 
 		Versions: domain.ResolvedModelVersions{
 			ModelBundleVersion:          spec.bundleVersion,
-			TaxonomyVersion:             spec.taxonomyVersion,
-			XGBoostModelVersion:         spec.xgboostModelVersion,
-			TransformerModelVersion:     "transformer-v1",
+			TaxonomyVersion:             "taxonomy-v1",
 			PreprocessingVersion:        "preprocessing-v1",
-			FeatureSchemaVersion:        spec.featureSchemaVersion,
+			FeatureSchemaVersion:        "feature-v1",
 			TensorSchemaVersion:         "tensor-v1",
 			ClassificationPolicyVersion: policyVersion,
 		},
@@ -520,15 +461,6 @@ func newTestClassificationRun(
 
 		PredictedCoarseClass: domain.CoarseClassCataclysmic,
 		PredictedLeafClass:   domain.LeafClassCataclysmic,
-
-		Timing: domain.ClassificationTiming{
-			DataFetchMS:            2,
-			PreprocessingMS:        3,
-			XGBoostInferenceMS:     xgboostInferenceMS,
-			TransformerInferenceMS: 7,
-			FusionMS:               1,
-			TotalMS:                totalMS,
-		},
 
 		CompletedAt: time.Date(
 			2026,

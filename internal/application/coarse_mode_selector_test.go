@@ -159,9 +159,7 @@ func TestCoarseModeSelectorReusesCompatibleHistoricalCoarse(
 	wantQuery := application.CompatibleCoarseQuery{
 		ObjectID:                 "OBJ-0002",
 		TargetLightCurveRevision: 22,
-		TaxonomyVersion:          metadata.TaxonomyVersion,
-		XGBoostModelVersion:      metadata.XGBoostModelVersion,
-		FeatureSchemaVersion:     metadata.FeatureSchemaVersion,
+		ModelBundleVersion:       metadata.ModelBundleVersion,
 	}
 	wantCalls := []application.CompatibleCoarseQuery{wantQuery}
 	if !reflect.DeepEqual(finder.calls, wantCalls) {
@@ -337,100 +335,59 @@ func TestCoarseModeSelectorRejectsInvalidResolvedMetadata(
 ) {
 	const modelBundleVersion = "bundle-v5"
 
-	tests := []struct {
-		name     string
-		metadata application.ModelBundleMetadata
-	}{
-		{
-			name: "bundle identity mismatch",
-			metadata: application.ModelBundleMetadata{
-				ModelBundleVersion:   "other-bundle",
-				TaxonomyVersion:      "taxonomy-v1",
-				XGBoostModelVersion:  "xgboost-v1",
-				FeatureSchemaVersion: "feature-v1",
+	resolver := fakemodelbundle.New(
+		map[string]fakemodelbundle.Response{
+			modelBundleVersion: {
+				Metadata: application.ModelBundleMetadata{
+					ModelBundleVersion: "other-bundle",
+				},
 			},
 		},
-		{
-			name: "missing taxonomy version",
-			metadata: application.ModelBundleMetadata{
-				ModelBundleVersion:   modelBundleVersion,
-				XGBoostModelVersion:  "xgboost-v1",
-				FeatureSchemaVersion: "feature-v1",
-			},
-		},
-		{
-			name: "missing xgboost model version",
-			metadata: application.ModelBundleMetadata{
-				ModelBundleVersion:   modelBundleVersion,
-				TaxonomyVersion:      "taxonomy-v1",
-				FeatureSchemaVersion: "feature-v1",
-			},
-		},
-		{
-			name: "missing feature schema version",
-			metadata: application.ModelBundleMetadata{
-				ModelBundleVersion:  modelBundleVersion,
-				TaxonomyVersion:     "taxonomy-v1",
-				XGBoostModelVersion: "xgboost-v1",
-			},
-		},
+	)
+	finder := &recordingCompatibleCoarseFinder{}
+
+	selector, err := application.NewCoarseModeSelector(
+		resolver,
+		finder,
+	)
+	if err != nil {
+		t.Fatalf(
+			"NewCoarseModeSelector() error = %v",
+			err,
+		)
 	}
 
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			resolver := fakemodelbundle.New(
-				map[string]fakemodelbundle.Response{
-					modelBundleVersion: {
-						Metadata: test.metadata,
-					},
-				},
-			)
-			finder := &recordingCompatibleCoarseFinder{}
-
-			selector, err := application.NewCoarseModeSelector(
-				resolver,
-				finder,
-			)
-			if err != nil {
-				t.Fatalf(
-					"NewCoarseModeSelector() error = %v",
-					err,
-				)
-			}
-
-			got, err := selector.Select(
-				context.Background(),
-				"OBJ-0006",
-				33,
-				21,
-				modelBundleVersion,
-			)
-			if !errors.Is(
-				err,
-				application.ErrInvalidModelBundleMetadata,
-			) {
-				t.Fatalf(
-					"Select() error = %v, want %v",
-					err,
-					application.ErrInvalidModelBundleMetadata,
-				)
-			}
-			if !reflect.DeepEqual(
-				got,
-				application.CoarseModeSelection{},
-			) {
-				t.Fatalf(
-					"Select() = %#v, want zero value",
-					got,
-				)
-			}
-			if gotCalls := len(finder.calls); gotCalls != 0 {
-				t.Fatalf(
-					"finder call count = %d, want 0",
-					gotCalls,
-				)
-			}
-		})
+	got, err := selector.Select(
+		context.Background(),
+		"OBJ-0006",
+		33,
+		21,
+		modelBundleVersion,
+	)
+	if !errors.Is(
+		err,
+		application.ErrInvalidModelBundleMetadata,
+	) {
+		t.Fatalf(
+			"Select() error = %v, want %v",
+			err,
+			application.ErrInvalidModelBundleMetadata,
+		)
+	}
+	if !reflect.DeepEqual(
+		got,
+		application.CoarseModeSelection{},
+	) {
+		t.Fatalf(
+			"Select() = %#v, want zero value",
+			got,
+		)
+	}
+	if gotCalls := len(finder.calls); gotCalls != 0 {
+		t.Fatalf(
+			"finder call count = %d, want 0",
+			gotCalls,
+		)
 	}
 }
 
@@ -563,10 +520,7 @@ func validModelBundleMetadata(
 	modelBundleVersion string,
 ) application.ModelBundleMetadata {
 	return application.ModelBundleMetadata{
-		ModelBundleVersion:   modelBundleVersion,
-		TaxonomyVersion:      "taxonomy-v1",
-		XGBoostModelVersion:  "xgboost-v1",
-		FeatureSchemaVersion: "xgb-feature-schema-v1",
+		ModelBundleVersion: modelBundleVersion,
 	}
 }
 

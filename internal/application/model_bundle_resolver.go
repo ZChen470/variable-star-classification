@@ -17,10 +17,6 @@ var (
 // checksum、Transformer 或部署配置
 type ModelBundleMetadata struct {
 	ModelBundleVersion string
-
-	TaxonomyVersion      string
-	XGBoostModelVersion  string
-	FeatureSchemaVersion string
 }
 
 // ModelBundleResolver 根据 command 已绑定的模型 Bundle 版本

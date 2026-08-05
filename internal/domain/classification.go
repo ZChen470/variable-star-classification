@@ -110,8 +110,6 @@ func (class LeafClass) IsValid() bool {
 type ResolvedModelVersions struct {
 	ModelBundleVersion          string
 	TaxonomyVersion             string
-	XGBoostModelVersion         string
-	TransformerModelVersion     string
 	PreprocessingVersion        string
 	FeatureSchemaVersion        string
 	TensorSchemaVersion         string

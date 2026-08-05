@@ -235,8 +235,6 @@ type ResolvedModelVersions struct {
 	state                       protoimpl.MessageState `protogen:"open.v1"`
 	ModelBundleVersion          string                 `protobuf:"bytes,1,opt,name=model_bundle_version,json=modelBundleVersion,proto3" json:"model_bundle_version,omitempty"`
 	TaxonomyVersion             string                 `protobuf:"bytes,2,opt,name=taxonomy_version,json=taxonomyVersion,proto3" json:"taxonomy_version,omitempty"`
-	XgboostModelVersion         string                 `protobuf:"bytes,3,opt,name=xgboost_model_version,json=xgboostModelVersion,proto3" json:"xgboost_model_version,omitempty"`
-	TransformerModelVersion     string                 `protobuf:"bytes,4,opt,name=transformer_model_version,json=transformerModelVersion,proto3" json:"transformer_model_version,omitempty"`
 	PreprocessingVersion        string                 `protobuf:"bytes,5,opt,name=preprocessing_version,json=preprocessingVersion,proto3" json:"preprocessing_version,omitempty"`
 	FeatureSchemaVersion        string                 `protobuf:"bytes,6,opt,name=feature_schema_version,json=featureSchemaVersion,proto3" json:"feature_schema_version,omitempty"`
 	TensorSchemaVersion         string                 `protobuf:"bytes,7,opt,name=tensor_schema_version,json=tensorSchemaVersion,proto3" json:"tensor_schema_version,omitempty"`
@@ -285,20 +283,6 @@ func (x *ResolvedModelVersions) GetModelBundleVersion() string {
 func (x *ResolvedModelVersions) GetTaxonomyVersion() string {
 	if x != nil {
 		return x.TaxonomyVersion
-	}
-	return ""
-}
-
-func (x *ResolvedModelVersions) GetXgboostModelVersion() string {
-	if x != nil {
-		return x.XgboostModelVersion
-	}
-	return ""
-}
-
-func (x *ResolvedModelVersions) GetTransformerModelVersion() string {
-	if x != nil {
-		return x.TransformerModelVersion
 	}
 	return ""
 }
@@ -443,16 +427,14 @@ const file_astro_classification_v1_classification_result_proto_rawDesc = "" +
 	"\fcompleted_at\x18\x13 \x01(\v2\x1a.google.protobuf.TimestampR\vcompletedAt\x12J\n" +
 	"\rtrace_context\x18\x14 \x01(\v2%.astro.classification.v1.TraceContextR\ftraceContext\x12M\n" +
 	"\x0eexecution_mode\x18\x15 \x01(\x0e2&.astro.classification.v1.ExecutionModeR\rexecutionModeB\x17\n" +
-	"\x15_coarse_source_run_id\"\xc7\x03\n" +
+	"\x15_coarse_source_run_id\"\x95\x03\n" +
 	"\x15ResolvedModelVersions\x120\n" +
 	"\x14model_bundle_version\x18\x01 \x01(\tR\x12modelBundleVersion\x12)\n" +
-	"\x10taxonomy_version\x18\x02 \x01(\tR\x0ftaxonomyVersion\x122\n" +
-	"\x15xgboost_model_version\x18\x03 \x01(\tR\x13xgboostModelVersion\x12:\n" +
-	"\x19transformer_model_version\x18\x04 \x01(\tR\x17transformerModelVersion\x123\n" +
+	"\x10taxonomy_version\x18\x02 \x01(\tR\x0ftaxonomyVersion\x123\n" +
 	"\x15preprocessing_version\x18\x05 \x01(\tR\x14preprocessingVersion\x124\n" +
 	"\x16feature_schema_version\x18\x06 \x01(\tR\x14featureSchemaVersion\x122\n" +
 	"\x15tensor_schema_version\x18\a \x01(\tR\x13tensorSchemaVersion\x12B\n" +
-	"\x1dclassification_policy_version\x18\b \x01(\tR\x1bclassificationPolicyVersion\"\x89\x02\n" +
+	"\x1dclassification_policy_version\x18\b \x01(\tR\x1bclassificationPolicyVersionJ\x04\b\x03\x10\x04J\x04\b\x04\x10\x05R\x15xgboost_model_versionR\x19transformer_model_version\"\x89\x02\n" +
 	"\x14ClassificationTiming\x12\"\n" +
 	"\rdata_fetch_ms\x18\x01 \x01(\x04R\vdataFetchMs\x12)\n" +
 	"\x10preprocessing_ms\x18\x02 \x01(\x04R\x0fpreprocessingMs\x120\n" +

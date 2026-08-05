@@ -459,9 +459,7 @@ func classificationInputGoldenScenarios() []classificationInputGoldenScenario {
 	reuseQuery := application.CompatibleCoarseQuery{
 		ObjectID:                 reuseRequest.ObjectID,
 		TargetLightCurveRevision: reuseRequest.LightCurveRevision,
-		TaxonomyVersion:          reuseMetadata.TaxonomyVersion,
-		XGBoostModelVersion:      reuseMetadata.XGBoostModelVersion,
-		FeatureSchemaVersion:     reuseMetadata.FeatureSchemaVersion,
+		ModelBundleVersion:       reuseRequest.ModelBundleVersion,
 	}
 	reuseWant := application.PreparedClassificationInput{
 		Revision: domain.LightCurveRevision{
@@ -510,9 +508,7 @@ func classificationInputGoldenScenarios() []classificationInputGoldenScenario {
 	bootstrapQuery := application.CompatibleCoarseQuery{
 		ObjectID:                 bootstrapRequest.ObjectID,
 		TargetLightCurveRevision: bootstrapRequest.LightCurveRevision,
-		TaxonomyVersion:          bootstrapMetadata.TaxonomyVersion,
-		XGBoostModelVersion:      bootstrapMetadata.XGBoostModelVersion,
-		FeatureSchemaVersion:     bootstrapMetadata.FeatureSchemaVersion,
+		ModelBundleVersion:       bootstrapRequest.ModelBundleVersion,
 	}
 	bootstrapWant := application.PreparedClassificationInput{
 		Revision: domain.LightCurveRevision{
@@ -569,10 +565,7 @@ func goldenModelBundleMetadata(
 	modelBundleVersion string,
 ) application.ModelBundleMetadata {
 	return application.ModelBundleMetadata{
-		ModelBundleVersion:   modelBundleVersion,
-		TaxonomyVersion:      "taxonomy-golden-v1",
-		XGBoostModelVersion:  "xgboost-golden-v1",
-		FeatureSchemaVersion: "feature-golden-v1",
+		ModelBundleVersion: modelBundleVersion,
 	}
 }
 

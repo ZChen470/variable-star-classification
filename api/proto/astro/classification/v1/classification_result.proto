@@ -57,12 +57,12 @@ message ClassificationResult {
 }
 
 message ResolvedModelVersions {
+  reserved 3, 4;
+  reserved "xgboost_model_version", "transformer_model_version";
+
   string model_bundle_version = 1;
 
   string taxonomy_version = 2;
-
-  string xgboost_model_version = 3;
-  string transformer_model_version = 4;
 
   string preprocessing_version = 5;
   string feature_schema_version = 6;

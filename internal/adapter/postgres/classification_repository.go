@@ -4,12 +4,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
+	"time"
+
 	"github.com/ZChen470/variable-star-classification/internal/application"
 	"github.com/ZChen470/variable-star-classification/internal/domain"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"math"
-	"time"
 )
 
 // ClassificationRepository 使用 PostgreSQL 保存分类结果
@@ -45,8 +46,6 @@ INSERT INTO classification_runs (
     xgboost_executed,
     model_bundle_version,
     taxonomy_version,
-    xgboost_model_version,
-    transformer_model_version,
     preprocessing_version,
     feature_schema_version,
     tensor_schema_version,
@@ -56,18 +55,11 @@ INSERT INTO classification_runs (
     leaf_probabilities,
     predicted_coarse_class,
     predicted_leaf_class,
-    data_fetch_ms,
-    preprocessing_ms,
-    xgboost_inference_ms,
-    transformer_inference_ms,
-    fusion_ms,
-    total_ms,
     completed_at
 ) VALUES (
     $1,  $2,  $3,  $4,  $5,  $6,  $7,  $8,
     $9,  $10, $11, $12, $13, $14, $15, $16,
-    $17, $18, $19, $20, $21, $22, $23, $24,
-    $25, $26, $27, $28, $29, $30, $31, $32
+    $17, $18, $19, $20, $21, $22, $23, $24
 )
 ON CONFLICT DO NOTHING
 RETURNING persisted_at
@@ -134,8 +126,6 @@ const classificationRunSelectColumns = `
     r.xgboost_executed,
     r.model_bundle_version,
     r.taxonomy_version,
-    r.xgboost_model_version,
-    r.transformer_model_version,
     r.preprocessing_version,
     r.feature_schema_version,
     r.tensor_schema_version,
@@ -145,12 +135,6 @@ const classificationRunSelectColumns = `
     r.leaf_probabilities,
     r.predicted_coarse_class,
     r.predicted_leaf_class,
-    r.data_fetch_ms,
-    r.preprocessing_ms,
-    r.xgboost_inference_ms,
-    r.transformer_inference_ms,
-    r.fusion_ms,
-    r.total_ms,
     r.completed_at,
     r.persisted_at
 `
@@ -177,11 +161,9 @@ SELECT
     r.coarse_probabilities
 FROM classification_runs AS r
 WHERE r.object_id = $1
-  AND r.taxonomy_version = $2
-  AND r.xgboost_model_version = $3
-  AND r.feature_schema_version = $4
+  AND r.model_bundle_version = $2
   AND r.xgboost_executed = TRUE
-  AND r.light_curve_revision < $5
+  AND r.light_curve_revision < $3
 ORDER BY
     r.light_curve_revision DESC,
     r.persisted_at DESC,
@@ -310,36 +292,6 @@ func classificationRunInsertArgument(run domain.ClassificationRun) ([]any, error
 		return nil, err
 	}
 
-	dataFetchMS, err := postgresBigInt("data fetch duration", run.Timing.DataFetchMS)
-	if err != nil {
-		return nil, err
-	}
-
-	preprocessingMS, err := postgresBigInt("data fetch duration", run.Timing.PreprocessingMS)
-	if err != nil {
-		return nil, err
-	}
-
-	xgboostInferenceMS, err := postgresBigInt("XGBoost inference duration", run.Timing.XGBoostInferenceMS)
-	if err != nil {
-		return nil, err
-	}
-
-	transformerInferenceMS, err := postgresBigInt("Transformer inference duration", run.Timing.TransformerInferenceMS)
-	if err != nil {
-		return nil, err
-	}
-
-	fusionMS, err := postgresBigInt("fusion duration", run.Timing.FusionMS)
-	if err != nil {
-		return nil, err
-	}
-
-	totalMS, err := postgresBigInt("total duration", run.Timing.TotalMS)
-	if err != nil {
-		return nil, err
-	}
-
 	var coarseSourceRunID any
 	if run.CoarseSourceRunID != nil {
 		coarseSourceRunID = string(*run.CoarseSourceRunID)
@@ -360,8 +312,6 @@ func classificationRunInsertArgument(run domain.ClassificationRun) ([]any, error
 		run.XGBoostExecuted,
 		run.Versions.ModelBundleVersion,
 		run.Versions.TaxonomyVersion,
-		run.Versions.XGBoostModelVersion,
-		run.Versions.TransformerModelVersion,
 		run.Versions.PreprocessingVersion,
 		run.Versions.FeatureSchemaVersion,
 		run.Versions.TensorSchemaVersion,
@@ -371,12 +321,6 @@ func classificationRunInsertArgument(run domain.ClassificationRun) ([]any, error
 		run.LeafProbabilities[:],
 		int32(run.PredictedCoarseClass),
 		int32(run.PredictedLeafClass),
-		dataFetchMS,
-		preprocessingMS,
-		xgboostInferenceMS,
-		transformerInferenceMS,
-		fusionMS,
-		totalMS,
 		run.CompletedAt,
 	}, nil
 }
@@ -386,13 +330,6 @@ func postgresInteger(field string, value uint32) (int32, error) {
 		return 0, fmt.Errorf("%s exceeds PostgreSQL INTEGER: %d", field, value)
 	}
 	return int32(value), nil
-}
-
-func postgresBigInt(field string, value uint64) (int64, error) {
-	if value > math.MaxInt64 {
-		return 0, fmt.Errorf("%s exceeds PostgreSQL BIGINT: %d", field, value)
-	}
-	return int64(value), nil
 }
 
 // GetCurrent 返回对象当前 Production 分类及其完整历史 Run。
@@ -465,9 +402,7 @@ func (
 		ctx,
 		findLatestCompatibleCoarseSQL,
 		query.ObjectID,
-		query.TaxonomyVersion,
-		query.XGBoostModelVersion,
-		query.FeatureSchemaVersion,
+		query.ModelBundleVersion,
 		query.TargetLightCurveRevision,
 	).Scan(
 		&sourceRunID,
@@ -530,8 +465,6 @@ type classificationRunRecord struct {
 
 	modelBundleVersion          string
 	taxonomyVersion             string
-	xgboostModelVersion         string
-	transformerModelVersion     string
 	preprocessingVersion        string
 	featureSchemaVersion        string
 	tensorSchemaVersion         string
@@ -543,13 +476,6 @@ type classificationRunRecord struct {
 
 	predictedCoarseClass int32
 	predictedLeafClass   int32
-
-	dataFetchMS            int64
-	preprocessingMS        int64
-	xgboostInferenceMS     int64
-	transformerInferenceMS int64
-	fusionMS               int64
-	totalMS                int64
 
 	completedAt time.Time
 	persistedAt time.Time
@@ -571,8 +497,6 @@ func (record *classificationRunRecord) scanDestinations() []any {
 		&record.xgboostExecuted,
 		&record.modelBundleVersion,
 		&record.taxonomyVersion,
-		&record.xgboostModelVersion,
-		&record.transformerModelVersion,
 		&record.preprocessingVersion,
 		&record.featureSchemaVersion,
 		&record.tensorSchemaVersion,
@@ -582,12 +506,6 @@ func (record *classificationRunRecord) scanDestinations() []any {
 		&record.leafProbabilities,
 		&record.predictedCoarseClass,
 		&record.predictedLeafClass,
-		&record.dataFetchMS,
-		&record.preprocessingMS,
-		&record.xgboostInferenceMS,
-		&record.transformerInferenceMS,
-		&record.fusionMS,
-		&record.totalMS,
 		&record.completedAt,
 		&record.persistedAt,
 	}
@@ -608,54 +526,6 @@ func (
 	coarseSourceEpochCount, err := uint32FromPostgresInteger(
 		"coarse source epoch count",
 		record.coarseSourceEpochCount,
-	)
-	if err != nil {
-		return domain.ClassificationRun{}, err
-	}
-
-	dataFetchMS, err := uint64FromPostgresBigInt(
-		"data fetch duration",
-		record.dataFetchMS,
-	)
-	if err != nil {
-		return domain.ClassificationRun{}, err
-	}
-
-	preprocessingMS, err := uint64FromPostgresBigInt(
-		"preprocessing duration",
-		record.preprocessingMS,
-	)
-	if err != nil {
-		return domain.ClassificationRun{}, err
-	}
-
-	xgboostInferenceMS, err := uint64FromPostgresBigInt(
-		"XGBoost inference duration",
-		record.xgboostInferenceMS,
-	)
-	if err != nil {
-		return domain.ClassificationRun{}, err
-	}
-
-	transformerInferenceMS, err := uint64FromPostgresBigInt(
-		"Transformer inference duration",
-		record.transformerInferenceMS,
-	)
-	if err != nil {
-		return domain.ClassificationRun{}, err
-	}
-
-	fusionMS, err := uint64FromPostgresBigInt(
-		"fusion duration",
-		record.fusionMS,
-	)
-	if err != nil {
-		return domain.ClassificationRun{}, err
-	}
-
-	totalMS, err := uint64FromPostgresBigInt(
-		"total duration",
-		record.totalMS,
 	)
 	if err != nil {
 		return domain.ClassificationRun{}, err
@@ -703,8 +573,6 @@ func (
 		Versions: domain.ResolvedModelVersions{
 			ModelBundleVersion:          record.modelBundleVersion,
 			TaxonomyVersion:             record.taxonomyVersion,
-			XGBoostModelVersion:         record.xgboostModelVersion,
-			TransformerModelVersion:     record.transformerModelVersion,
 			PreprocessingVersion:        record.preprocessingVersion,
 			FeatureSchemaVersion:        record.featureSchemaVersion,
 			TensorSchemaVersion:         record.tensorSchemaVersion,
@@ -716,14 +584,6 @@ func (
 		PredictedLeafClass: domain.LeafClass(
 			record.predictedLeafClass,
 		),
-		Timing: domain.ClassificationTiming{
-			DataFetchMS:            dataFetchMS,
-			PreprocessingMS:        preprocessingMS,
-			XGBoostInferenceMS:     xgboostInferenceMS,
-			TransformerInferenceMS: transformerInferenceMS,
-			FusionMS:               fusionMS,
-			TotalMS:                totalMS,
-		},
 		CompletedAt: record.completedAt,
 		PersistedAt: record.persistedAt,
 	}
@@ -764,19 +624,4 @@ func uint32FromPostgresInteger(
 	}
 
 	return uint32(value), nil
-}
-
-func uint64FromPostgresBigInt(
-	field string,
-	value int64,
-) (uint64, error) {
-	if value < 0 {
-		return 0, fmt.Errorf(
-			"%s is negative: %d",
-			field,
-			value,
-		)
-	}
-
-	return uint64(value), nil
 }

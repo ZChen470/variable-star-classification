@@ -144,9 +144,7 @@ func (selector *CoarseModeSelector) Select(ctx context.Context, objectID string,
 	query := CompatibleCoarseQuery{
 		ObjectID:                 objectID,
 		TargetLightCurveRevision: targetLightCurveRevision,
-		TaxonomyVersion:          modelBundle.TaxonomyVersion,
-		XGBoostModelVersion:      modelBundle.XGBoostModelVersion,
-		FeatureSchemaVersion:     modelBundle.FeatureSchemaVersion,
+		ModelBundleVersion:       modelBundleVersion,
 	}
 
 	compatibleCoarse, err := selector.coarseFinder.FindLatestCompatibleCoarse(ctx, query)
@@ -188,30 +186,6 @@ func validateModelBundleMetadata(requestedVersion string, metadata ModelBundleMe
 			requestedVersion,
 			metadata.ModelBundleVersion,
 		)
-	}
-
-	requiredVersion := []struct {
-		name  string
-		value string
-	}{
-		{
-			name:  "taxonomy_version",
-			value: metadata.TaxonomyVersion,
-		},
-		{
-			name:  "xgboost_model_version",
-			value: metadata.XGBoostModelVersion,
-		},
-		{
-			name:  "feature_schema_version",
-			value: metadata.FeatureSchemaVersion,
-		},
-	}
-
-	for _, required := range requiredVersion {
-		if required.value == "" {
-			return fmt.Errorf("%w: %s must not be empty", ErrInvalidModelBundleMetadata, required.name)
-		}
 	}
 
 	return nil

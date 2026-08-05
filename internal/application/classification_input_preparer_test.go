@@ -255,9 +255,7 @@ func TestClassificationInputPreparerReusesCompatibleHistoricalCoarse(
 	wantQuery := application.CompatibleCoarseQuery{
 		ObjectID:                 request.ObjectID,
 		TargetLightCurveRevision: request.LightCurveRevision,
-		TaxonomyVersion:          metadata.TaxonomyVersion,
-		XGBoostModelVersion:      metadata.XGBoostModelVersion,
-		FeatureSchemaVersion:     metadata.FeatureSchemaVersion,
+		ModelBundleVersion:       request.ModelBundleVersion,
 	}
 	wantFinderCalls := []application.CompatibleCoarseQuery{
 		wantQuery,
@@ -596,10 +594,7 @@ func preparationModelBundleMetadata(
 	modelBundleVersion string,
 ) application.ModelBundleMetadata {
 	return application.ModelBundleMetadata{
-		ModelBundleVersion:   modelBundleVersion,
-		TaxonomyVersion:      "taxonomy-v1",
-		XGBoostModelVersion:  "xgboost-v1",
-		FeatureSchemaVersion: "xgb-feature-schema-v1",
+		ModelBundleVersion: modelBundleVersion,
 	}
 }
 

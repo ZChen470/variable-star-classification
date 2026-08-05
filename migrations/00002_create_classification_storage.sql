@@ -21,8 +21,6 @@ CREATE TABLE classification_runs (
 
     model_bundle_version TEXT NOT NULL,
     taxonomy_version TEXT NOT NULL,
-    xgboost_model_version TEXT NOT NULL,
-    transformer_model_version TEXT NOT NULL,
     preprocessing_version TEXT NOT NULL,
     feature_schema_version TEXT NOT NULL,
     tensor_schema_version TEXT NOT NULL,
@@ -34,13 +32,6 @@ CREATE TABLE classification_runs (
 
     predicted_coarse_class INTEGER NOT NULL,
     predicted_leaf_class INTEGER NOT NULL,
-
-    data_fetch_ms BIGINT NOT NULL,
-    preprocessing_ms BIGINT NOT NULL,
-    xgboost_inference_ms BIGINT NOT NULL,
-    transformer_inference_ms BIGINT NOT NULL,
-    fusion_ms BIGINT NOT NULL,
-    total_ms BIGINT NOT NULL,
 
     completed_at TIMESTAMPTZ NOT NULL,
     persisted_at TIMESTAMPTZ NOT NULL DEFAULT clock_timestamp(),
@@ -119,19 +110,6 @@ CREATE TABLE classification_runs (
         CHECK (
             taxonomy_version <> ''
             AND taxonomy_version = btrim(taxonomy_version)
-        ),
-
-    CONSTRAINT classification_runs_xgboost_model_version_check
-        CHECK (
-            xgboost_model_version <> ''
-            AND xgboost_model_version = btrim(xgboost_model_version)
-        ),
-
-    CONSTRAINT classification_runs_transformer_model_version_check
-        CHECK (
-            transformer_model_version <> ''
-            AND transformer_model_version =
-                btrim(transformer_model_version)
         ),
 
     CONSTRAINT classification_runs_preprocessing_version_check
@@ -223,25 +201,7 @@ CREATE TABLE classification_runs (
                 6001,
                 6002
             )
-        ),
-
-    CONSTRAINT classification_runs_data_fetch_ms_check
-        CHECK (data_fetch_ms >= 0),
-
-    CONSTRAINT classification_runs_preprocessing_ms_check
-        CHECK (preprocessing_ms >= 0),
-
-    CONSTRAINT classification_runs_xgboost_inference_ms_check
-        CHECK (xgboost_inference_ms >= 0),
-
-    CONSTRAINT classification_runs_transformer_inference_ms_check
-        CHECK (transformer_inference_ms >= 0),
-
-    CONSTRAINT classification_runs_fusion_ms_check
-        CHECK (fusion_ms >= 0),
-
-    CONSTRAINT classification_runs_total_ms_check
-        CHECK (total_ms >= 0)
+        )
 );
 
 CREATE INDEX classification_runs_object_revision_idx
@@ -253,9 +213,7 @@ CREATE INDEX classification_runs_object_revision_idx
 CREATE INDEX classification_runs_compatible_coarse_lookup_idx
     ON classification_runs (
         object_id,
-        taxonomy_version,
-        xgboost_model_version,
-        feature_schema_version,
+        model_bundle_version,
         light_curve_revision DESC
     )
     WHERE xgboost_executed;
