@@ -65,12 +65,5 @@ message ResolvedModelVersions {
 
   // 旧的内部模型和 Schema 版本字段已退役。
   reserved 2, 3, 4, 5, 6, 7;
-  reserved
-      "taxonomy_version",
-      "xgboost_model_version",
-      "transformer_model_version",
-      "preprocessing_version",
-      "feature_schema_version",
-      "tensor_schema_version",
-      "classification_policy_version";
+  reserved "taxonomy_version", "xgboost_model_version", "transformer_model_version", "preprocessing_version", "feature_schema_version", "tensor_schema_version", "classification_policy_version";
 }
