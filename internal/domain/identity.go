@@ -22,11 +22,10 @@ const (
 //
 // candidate_revision、priority、时间和 trace 不参与任务身份。
 type JobIdentity struct {
-	ObjectID                    string
-	LightCurveRevision          int64
-	ModelBundleVersion          string
-	ClassificationPolicyVersion string
-	ExecutionMode               ExecutionMode
+	ObjectID           string
+	LightCurveRevision int64
+	ModelBundleVersion string
+	ExecutionMode      ExecutionMode
 }
 
 type JobID string
@@ -53,7 +52,7 @@ func GenerateJobID(identity JobIdentity) (JobID, error) {
 	payload = append(payload, revision[:]...)
 
 	payload = appendLengthPrefixedString(payload, identity.ModelBundleVersion)
-	payload = appendLengthPrefixedString(payload, identity.ClassificationPolicyVersion)
+	//payload = appendLengthPrefixedString(payload, identity.ClassificationPolicyVersion)
 	payload = append(payload, byte(identity.ExecutionMode))
 
 	id := uuid.NewSHA1(uuid.NameSpaceURL, payload)
@@ -85,9 +84,7 @@ func validateJobIdentity(identity JobIdentity) error {
 	if err := validateIdentityString("model bundle version", identity.ModelBundleVersion); err != nil {
 		return err
 	}
-	if err := validateIdentityString("classification policy version", identity.ClassificationPolicyVersion); err != nil {
-		return err
-	}
+	//if err := validateIdentityString("classification policy version", identity.ClassificationPolicyVersion); err != nil {return err}
 
 	switch identity.ExecutionMode {
 	case ExecutionModeProduction, ExecutionModeShadow, ExecutionModeReprocess:

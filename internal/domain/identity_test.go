@@ -4,11 +4,10 @@ import "testing"
 
 func TestDeterministicIDsGoldenVector(t *testing.T) {
 	identity := JobIdentity{
-		ObjectID:                    "OBJ-0001",
-		LightCurveRevision:          21,
-		ModelBundleVersion:          "bundle-2026-07-001",
-		ClassificationPolicyVersion: "classification-policy-v1",
-		ExecutionMode:               ExecutionModeProduction,
+		ObjectID:           "OBJ-0001",
+		LightCurveRevision: 21,
+		ModelBundleVersion: "bundle-2026-07-001",
+		ExecutionMode:      ExecutionModeProduction,
 	}
 
 	jobID, err := GenerateJobID(identity)
@@ -16,7 +15,7 @@ func TestDeterministicIDsGoldenVector(t *testing.T) {
 		t.Fatalf("GenerateJobID() error = %v", err)
 	}
 
-	const wantJobID = JobID("46709af9-e19b-5dfc-beb5-b9213127fd18")
+	const wantJobID = JobID("2f199935-6d68-5868-944c-9675f194ac09")
 	if jobID != wantJobID {
 		t.Fatalf("GenerateJobID() = %q, want %q", jobID, wantJobID)
 	}
@@ -26,7 +25,7 @@ func TestDeterministicIDsGoldenVector(t *testing.T) {
 		t.Fatalf("GenerateRunID() error = %v", err)
 	}
 
-	const wantRunID = RunID("d42c8015-e1f6-59df-b3ad-3e0f3cff2702")
+	const wantRunID = RunID("f3042c4a-04ba-517f-b57e-92c3022e7af7")
 	if runID != wantRunID {
 		t.Fatalf("GenerateRunID() = %q, want %q", runID, wantRunID)
 	}
@@ -34,11 +33,10 @@ func TestDeterministicIDsGoldenVector(t *testing.T) {
 
 func TestGenerateJobIDIsDeterministic(t *testing.T) {
 	identity := JobIdentity{
-		ObjectID:                    "OBJ-0001",
-		LightCurveRevision:          21,
-		ModelBundleVersion:          "bundle-2026-07-001",
-		ClassificationPolicyVersion: "classification-policy-v1",
-		ExecutionMode:               ExecutionModeProduction,
+		ObjectID:           "OBJ-0001",
+		LightCurveRevision: 21,
+		ModelBundleVersion: "bundle-2026-07-001",
+		ExecutionMode:      ExecutionModeProduction,
 	}
 
 	first, err := GenerateJobID(identity)
@@ -58,11 +56,10 @@ func TestGenerateJobIDIsDeterministic(t *testing.T) {
 
 func TestGenerateJobIDChangesWhenIdentityChanges(t *testing.T) {
 	base := JobIdentity{
-		ObjectID:                    "OBJ-0001",
-		LightCurveRevision:          21,
-		ModelBundleVersion:          "bundle-2026-07-001",
-		ClassificationPolicyVersion: "classification-policy-v1",
-		ExecutionMode:               ExecutionModeProduction,
+		ObjectID:           "OBJ-0001",
+		LightCurveRevision: 21,
+		ModelBundleVersion: "bundle-2026-07-001",
+		ExecutionMode:      ExecutionModeProduction,
 	}
 
 	baseID, err := GenerateJobID(base)
@@ -99,14 +96,6 @@ func TestGenerateJobIDChangesWhenIdentityChanges(t *testing.T) {
 			}(),
 		},
 		{
-			name: "classification policy version",
-			identity: func() JobIdentity {
-				changed := base
-				changed.ClassificationPolicyVersion = "classification-policy-v2"
-				return changed
-			}(),
-		},
-		{
 			name: "execution mode",
 			identity: func() JobIdentity {
 				changed := base
@@ -135,11 +124,10 @@ func TestGenerateJobIDChangesWhenIdentityChanges(t *testing.T) {
 
 func TestGenerateJobIDRejectsInvalidIdentity(t *testing.T) {
 	valid := JobIdentity{
-		ObjectID:                    "OBJ-0001",
-		LightCurveRevision:          21,
-		ModelBundleVersion:          "bundle-2026-07-001",
-		ClassificationPolicyVersion: "classification-policy-v1",
-		ExecutionMode:               ExecutionModeProduction,
+		ObjectID:           "OBJ-0001",
+		LightCurveRevision: 21,
+		ModelBundleVersion: "bundle-2026-07-001",
+		ExecutionMode:      ExecutionModeProduction,
 	}
 
 	tests := []struct {
@@ -199,14 +187,6 @@ func TestGenerateJobIDRejectsInvalidIdentity(t *testing.T) {
 			identity: func() JobIdentity {
 				invalid := valid
 				invalid.ModelBundleVersion = ""
-				return invalid
-			}(),
-		},
-		{
-			name: "empty classification policy version",
-			identity: func() JobIdentity {
-				invalid := valid
-				invalid.ClassificationPolicyVersion = ""
 				return invalid
 			}(),
 		},

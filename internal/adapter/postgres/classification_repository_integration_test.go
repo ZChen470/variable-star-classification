@@ -374,11 +374,10 @@ func newTestClassificationRun(
 	const policyVersion = "classification-policy-v1"
 
 	jobID, err := domain.GenerateJobID(domain.JobIdentity{
-		ObjectID:                    spec.objectID,
-		LightCurveRevision:          spec.revision,
-		ModelBundleVersion:          spec.bundleVersion,
-		ClassificationPolicyVersion: policyVersion,
-		ExecutionMode:               spec.mode,
+		ObjectID:           spec.objectID,
+		LightCurveRevision: spec.revision,
+		ModelBundleVersion: spec.bundleVersion,
+		ExecutionMode:      spec.mode,
 	})
 	if err != nil {
 		t.Fatalf("GenerateJobID(): %v", err)
@@ -425,8 +424,7 @@ func newTestClassificationRun(
 		XGBoostExecuted:                spec.xgboostExecuted,
 
 		Versions: domain.ResolvedModelVersions{
-			ModelBundleVersion:          spec.bundleVersion,
-			ClassificationPolicyVersion: policyVersion,
+			ModelBundleVersion: spec.bundleVersion,
 		},
 
 		CoarseProbabilities: [domain.CoarseProbabilityCount]float32{

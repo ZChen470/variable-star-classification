@@ -45,11 +45,6 @@ INSERT INTO classification_runs (
     coarse_source_epoch_count,
     xgboost_executed,
     model_bundle_version,
-    taxonomy_version,
-    preprocessing_version,
-    feature_schema_version,
-    tensor_schema_version,
-    classification_policy_version,
     coarse_probabilities,
     fine_conditional_probabilities,
     leaf_probabilities,
@@ -59,7 +54,7 @@ INSERT INTO classification_runs (
 ) VALUES (
     $1,  $2,  $3,  $4,  $5,  $6,  $7,  $8,
     $9,  $10, $11, $12, $13, $14, $15, $16,
-    $17, $18, $19, $20, $21, $22, $23, $24
+    $17, $18, $19
 )
 ON CONFLICT DO NOTHING
 RETURNING persisted_at
@@ -125,11 +120,6 @@ const classificationRunSelectColumns = `
     r.coarse_source_epoch_count,
     r.xgboost_executed,
     r.model_bundle_version,
-    r.taxonomy_version,
-    r.preprocessing_version,
-    r.feature_schema_version,
-    r.tensor_schema_version,
-    r.classification_policy_version,
     r.coarse_probabilities,
     r.fine_conditional_probabilities,
     r.leaf_probabilities,
@@ -311,7 +301,6 @@ func classificationRunInsertArgument(run domain.ClassificationRun) ([]any, error
 		coarseSourceEpochCount,
 		run.XGBoostExecuted,
 		run.Versions.ModelBundleVersion,
-		run.Versions.ClassificationPolicyVersion,
 		run.CoarseProbabilities[:],
 		run.FineConditionalProbabilities[:],
 		run.LeafProbabilities[:],

@@ -31,7 +31,7 @@ func NewCandidateHandler(candidateTopic string, commandTopic string, candidateDL
 	if candidateDLQTopic == "" {
 		return nil, errors.New("candidate DLQ topic must not be empty")
 	}
-	if policy.modelBundleVersion == "" || policy.classificationPolicyVersion == "" {
+	if policy.modelBundleVersion == "" {
 		return nil, errors.New("classification policy is not configured")
 	}
 	if publisher == nil {

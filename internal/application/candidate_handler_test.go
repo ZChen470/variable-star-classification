@@ -384,7 +384,6 @@ func newValidCandidateHandlerPolicy(
 
 	policy, err := NewClassificationPolicyV1(
 		"bundle-v1",
-		"classification-policy-v1",
 	)
 	if err != nil {
 		t.Fatalf("NewClassificationPolicyV1 returned error: %v", err)

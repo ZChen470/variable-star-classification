@@ -318,7 +318,7 @@ runtime_requirements:
 contract_artifacts:
   serving_contract:
     file: serving-contract-v1.yaml
-    sha256: 63041da2cf4fd8630b0dbf99047ecfd100539b73b2c28f7dc48a856eb5ec5e10
+    sha256: 17253131d9864b510c219bef11a3da640395562ccb2c28718eeae161f4b160b2
 
   triton_config:
     file: variable_star_classifier/config.pbtxt

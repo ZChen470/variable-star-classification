@@ -67,11 +67,10 @@ func BuildClassificationCommandMessage(commandTopic string, input CandidateEvent
 	}
 
 	jobID, err := domain.GenerateJobID(domain.JobIdentity{
-		ObjectID:                    input.ObjectID,
-		LightCurveRevision:          input.LightCurveRevision,
-		ModelBundleVersion:          decision.ModelBundleVersion,
-		ClassificationPolicyVersion: decision.ClassificationPolicyVersion,
-		ExecutionMode:               decision.ExecutionMode,
+		ObjectID:           input.ObjectID,
+		LightCurveRevision: input.LightCurveRevision,
+		ModelBundleVersion: decision.ModelBundleVersion,
+		ExecutionMode:      decision.ExecutionMode,
 	})
 	if err != nil {
 		return OutboundMessage{}, fmt.Errorf(
@@ -84,18 +83,17 @@ func BuildClassificationCommandMessage(commandTopic string, input CandidateEvent
 		return OutboundMessage{}, fmt.Errorf("invalid candidate occurred_at: %w", err)
 	}
 	command := &classificationv1.ClassificationCommand{
-		JobId:                       string(jobID),
-		ObjectId:                    input.ObjectID,
-		CandidateRevision:           input.CandidateRevision,
-		LightCurveRevision:          input.LightCurveRevision,
-		DeclaredEligibleEpochCount:  input.EligibleEpochCount,
-		ModelBundleVersion:          decision.ModelBundleVersion,
-		ClassificationPolicyVersion: decision.ClassificationPolicyVersion,
-		ExecutionMode:               executionMode,
-		Priority:                    priority,
-		CreatedAt:                   createdAt,
-		DeadlineAt:                  nil,
-		TraceContext:                classificationCommandTraceContext(input.TraceContext),
+		JobId:                      string(jobID),
+		ObjectId:                   input.ObjectID,
+		CandidateRevision:          input.CandidateRevision,
+		LightCurveRevision:         input.LightCurveRevision,
+		DeclaredEligibleEpochCount: input.EligibleEpochCount,
+		ModelBundleVersion:         decision.ModelBundleVersion,
+		ExecutionMode:              executionMode,
+		Priority:                   priority,
+		CreatedAt:                  createdAt,
+		DeadlineAt:                 nil,
+		TraceContext:               classificationCommandTraceContext(input.TraceContext),
 	}
 
 	value, err := proto.Marshal(command)

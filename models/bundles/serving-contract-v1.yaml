@@ -4,11 +4,6 @@ contract_status: FROZEN
 
 bundle_binding:
   model_bundle_version: variable-classifier-2026-07-003
-  taxonomy_version: taxonomy-v1
-  classification_policy_version: classification-policy-v1
-  feature_schema_version: xgb-feature-schema-v1
-  preprocessing_version: transformer-preprocessing-v2
-  tensor_schema_version: transformer-tensor-schema-v2
   fusion_contract_version: hierarchical-fusion-v1
 
 public_model:

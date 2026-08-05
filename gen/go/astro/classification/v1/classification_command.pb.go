@@ -30,16 +30,15 @@ type ClassificationCommand struct {
 	CandidateRevision  int64 `protobuf:"varint,3,opt,name=candidate_revision,json=candidateRevision,proto3" json:"candidate_revision,omitempty"`
 	LightCurveRevision int64 `protobuf:"varint,4,opt,name=light_curve_revision,json=lightCurveRevision,proto3" json:"light_curve_revision,omitempty"`
 	// 上游声明的 epoch 数，Worker 读取后应再次校验。
-	DeclaredEligibleEpochCount  uint32                 `protobuf:"varint,5,opt,name=declared_eligible_epoch_count,json=declaredEligibleEpochCount,proto3" json:"declared_eligible_epoch_count,omitempty"`
-	ModelBundleVersion          string                 `protobuf:"bytes,6,opt,name=model_bundle_version,json=modelBundleVersion,proto3" json:"model_bundle_version,omitempty"`
-	ClassificationPolicyVersion string                 `protobuf:"bytes,7,opt,name=classification_policy_version,json=classificationPolicyVersion,proto3" json:"classification_policy_version,omitempty"`
-	ExecutionMode               ExecutionMode          `protobuf:"varint,8,opt,name=execution_mode,json=executionMode,proto3,enum=astro.classification.v1.ExecutionMode" json:"execution_mode,omitempty"`
-	Priority                    ClassificationPriority `protobuf:"varint,9,opt,name=priority,proto3,enum=astro.classification.v1.ClassificationPriority" json:"priority,omitempty"`
-	CreatedAt                   *timestamppb.Timestamp `protobuf:"bytes,10,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
-	DeadlineAt                  *timestamppb.Timestamp `protobuf:"bytes,11,opt,name=deadline_at,json=deadlineAt,proto3,oneof" json:"deadline_at,omitempty"`
-	TraceContext                *TraceContext          `protobuf:"bytes,12,opt,name=trace_context,json=traceContext,proto3" json:"trace_context,omitempty"`
-	unknownFields               protoimpl.UnknownFields
-	sizeCache                   protoimpl.SizeCache
+	DeclaredEligibleEpochCount uint32                 `protobuf:"varint,5,opt,name=declared_eligible_epoch_count,json=declaredEligibleEpochCount,proto3" json:"declared_eligible_epoch_count,omitempty"`
+	ModelBundleVersion         string                 `protobuf:"bytes,6,opt,name=model_bundle_version,json=modelBundleVersion,proto3" json:"model_bundle_version,omitempty"`
+	ExecutionMode              ExecutionMode          `protobuf:"varint,8,opt,name=execution_mode,json=executionMode,proto3,enum=astro.classification.v1.ExecutionMode" json:"execution_mode,omitempty"`
+	Priority                   ClassificationPriority `protobuf:"varint,9,opt,name=priority,proto3,enum=astro.classification.v1.ClassificationPriority" json:"priority,omitempty"`
+	CreatedAt                  *timestamppb.Timestamp `protobuf:"bytes,10,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	DeadlineAt                 *timestamppb.Timestamp `protobuf:"bytes,11,opt,name=deadline_at,json=deadlineAt,proto3,oneof" json:"deadline_at,omitempty"`
+	TraceContext               *TraceContext          `protobuf:"bytes,12,opt,name=trace_context,json=traceContext,proto3" json:"trace_context,omitempty"`
+	unknownFields              protoimpl.UnknownFields
+	sizeCache                  protoimpl.SizeCache
 }
 
 func (x *ClassificationCommand) Reset() {
@@ -114,13 +113,6 @@ func (x *ClassificationCommand) GetModelBundleVersion() string {
 	return ""
 }
 
-func (x *ClassificationCommand) GetClassificationPolicyVersion() string {
-	if x != nil {
-		return x.ClassificationPolicyVersion
-	}
-	return ""
-}
-
 func (x *ClassificationCommand) GetExecutionMode() ExecutionMode {
 	if x != nil {
 		return x.ExecutionMode
@@ -160,15 +152,14 @@ var File_astro_classification_v1_classification_command_proto protoreflect.FileD
 
 const file_astro_classification_v1_classification_command_proto_rawDesc = "" +
 	"\n" +
-	"4astro/classification/v1/classification_command.proto\x12\x17astro.classification.v1\x1a$astro/classification/v1/common.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xda\x05\n" +
+	"4astro/classification/v1/classification_command.proto\x12\x17astro.classification.v1\x1a$astro/classification/v1/common.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xbb\x05\n" +
 	"\x15ClassificationCommand\x12\x15\n" +
 	"\x06job_id\x18\x01 \x01(\tR\x05jobId\x12\x1b\n" +
 	"\tobject_id\x18\x02 \x01(\tR\bobjectId\x12-\n" +
 	"\x12candidate_revision\x18\x03 \x01(\x03R\x11candidateRevision\x120\n" +
 	"\x14light_curve_revision\x18\x04 \x01(\x03R\x12lightCurveRevision\x12A\n" +
 	"\x1ddeclared_eligible_epoch_count\x18\x05 \x01(\rR\x1adeclaredEligibleEpochCount\x120\n" +
-	"\x14model_bundle_version\x18\x06 \x01(\tR\x12modelBundleVersion\x12B\n" +
-	"\x1dclassification_policy_version\x18\a \x01(\tR\x1bclassificationPolicyVersion\x12M\n" +
+	"\x14model_bundle_version\x18\x06 \x01(\tR\x12modelBundleVersion\x12M\n" +
 	"\x0eexecution_mode\x18\b \x01(\x0e2&.astro.classification.v1.ExecutionModeR\rexecutionMode\x12K\n" +
 	"\bpriority\x18\t \x01(\x0e2/.astro.classification.v1.ClassificationPriorityR\bpriority\x129\n" +
 	"\n" +
@@ -177,7 +168,7 @@ const file_astro_classification_v1_classification_command_proto_rawDesc = "" +
 	"\vdeadline_at\x18\v \x01(\v2\x1a.google.protobuf.TimestampH\x00R\n" +
 	"deadlineAt\x88\x01\x01\x12J\n" +
 	"\rtrace_context\x18\f \x01(\v2%.astro.classification.v1.TraceContextR\ftraceContextB\x0e\n" +
-	"\f_deadline_atBbZ`github.com/ZChen470/variable-star-classification/gen/go/astro/classification/v1;classificationv1b\x06proto3"
+	"\f_deadline_atJ\x04\b\a\x10\bR\x1dclassification_policy_versionBbZ`github.com/ZChen470/variable-star-classification/gen/go/astro/classification/v1;classificationv1b\x06proto3"
 
 var (
 	file_astro_classification_v1_classification_command_proto_rawDescOnce sync.Once

@@ -12,7 +12,6 @@ func TestLoadCandidateOrchestratorConfig(t *testing.T) {
 	values := validCandidateOrchestratorEnvironment()
 	values[envKafkaBrokers] = "broker-a:9092, broker-b:9092"
 	values[envModelBundleVersion] = " bundle-v1 "
-	values[envClassificationPolicyVersion] = " policy-v1 "
 	values[envKafkaConsumerGroup] =
 		" candidate-orchestrator-v1 "
 	values[envCandidateTopic] =
@@ -90,13 +89,6 @@ func TestLoadCandidateOrchestratorConfig(t *testing.T) {
 			config.modelBundleVersion,
 		)
 	}
-
-	if config.classificationPolicyVersion != " policy-v1 " {
-		t.Fatalf(
-			"classification policy version = %q, want preserved value",
-			config.classificationPolicyVersion,
-		)
-	}
 }
 
 func TestLoadCandidateOrchestratorConfigUsesClientIDOverride(
@@ -138,7 +130,6 @@ func TestLoadCandidateOrchestratorConfigRequiresEnvironment(
 		envClassificationCommandTopic,
 		envCandidateDLQTopic,
 		envModelBundleVersion,
-		envClassificationPolicyVersion,
 	}
 
 	for _, name := range requiredNames {
@@ -208,13 +199,12 @@ func TestLoadCandidateOrchestratorConfigRejectsNilLookup(
 
 func validCandidateOrchestratorEnvironment() map[string]string {
 	return map[string]string{
-		envKafkaBrokers:                "broker:9092",
-		envKafkaConsumerGroup:          "candidate-orchestrator-v1",
-		envCandidateTopic:              "astro.candidate.events.v1",
-		envClassificationCommandTopic:  "astro.classification.commands.v1",
-		envCandidateDLQTopic:           "astro.candidate.events.dlq.v1",
-		envModelBundleVersion:          "bundle-v1",
-		envClassificationPolicyVersion: "classification-policy-v1",
+		envKafkaBrokers:               "broker:9092",
+		envKafkaConsumerGroup:         "candidate-orchestrator-v1",
+		envCandidateTopic:             "astro.candidate.events.v1",
+		envClassificationCommandTopic: "astro.classification.commands.v1",
+		envCandidateDLQTopic:          "astro.candidate.events.dlq.v1",
+		envModelBundleVersion:         "bundle-v1",
 	}
 }
 

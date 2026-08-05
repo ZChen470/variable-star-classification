@@ -108,8 +108,7 @@ func (class LeafClass) IsValid() bool {
 
 // ResolvedModelVersions 保存一次分类实际解析出的全部模型与 Schema 版本。
 type ResolvedModelVersions struct {
-	ModelBundleVersion          string
-	ClassificationPolicyVersion string
+	ModelBundleVersion string
 }
 
 //// ClassificationTiming 保存一次成功分类各阶段的耗时。

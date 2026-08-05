@@ -127,13 +127,6 @@ CREATE TABLE classification_runs (
                 btrim(tensor_schema_version)
         ),
 
-    CONSTRAINT classification_runs_policy_version_check
-        CHECK (
-            classification_policy_version <> ''
-            AND classification_policy_version =
-                btrim(classification_policy_version)
-        ),
-
     CONSTRAINT classification_runs_coarse_probabilities_shape_check
         CHECK (
             array_ndims(coarse_probabilities) = 1

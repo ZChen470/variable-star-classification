@@ -96,11 +96,10 @@ func TestBuildClassificationCommandMessage(t *testing.T) {
 	}
 
 	expectedJobID, err := domain.GenerateJobID(domain.JobIdentity{
-		ObjectID:                    input.ObjectID,
-		LightCurveRevision:          input.LightCurveRevision,
-		ModelBundleVersion:          decision.ModelBundleVersion,
-		ClassificationPolicyVersion: decision.ClassificationPolicyVersion,
-		ExecutionMode:               decision.ExecutionMode,
+		ObjectID:           input.ObjectID,
+		LightCurveRevision: input.LightCurveRevision,
+		ModelBundleVersion: decision.ModelBundleVersion,
+		ExecutionMode:      decision.ExecutionMode,
 	})
 	if err != nil {
 		t.Fatalf("GenerateJobID returned error: %v", err)
@@ -146,13 +145,6 @@ func TestBuildClassificationCommandMessage(t *testing.T) {
 			"unexpected model bundle version: got %q, want %q",
 			command.GetModelBundleVersion(),
 			decision.ModelBundleVersion,
-		)
-	}
-	if command.GetClassificationPolicyVersion() != decision.ClassificationPolicyVersion {
-		t.Fatalf(
-			"unexpected policy version: got %q, want %q",
-			command.GetClassificationPolicyVersion(),
-			decision.ClassificationPolicyVersion,
 		)
 	}
 	if command.GetExecutionMode() !=
@@ -289,15 +281,6 @@ func TestBuildClassificationCommandMessageJobIDSemantics(t *testing.T) {
 			decision: func() ClassificationPolicyDecision {
 				decision := baseDecision
 				decision.ModelBundleVersion = "bundle-v2"
-				return decision
-			}(),
-		},
-		{
-			name:  "classification policy version",
-			input: baseInput,
-			decision: func() ClassificationPolicyDecision {
-				decision := baseDecision
-				decision.ClassificationPolicyVersion = "policy-v2"
 				return decision
 			}(),
 		},
@@ -486,12 +469,11 @@ func validClassificationCommandInput() CandidateEventInput {
 
 func validClassificationCommandDecision() ClassificationPolicyDecision {
 	return ClassificationPolicyDecision{
-		ShouldClassify:              true,
-		ModelBundleVersion:          "bundle-v1",
-		ClassificationPolicyVersion: "classification-policy-v1",
-		ExecutionMode:               domain.ExecutionModeProduction,
-		Priority:                    ClassificationPriorityRealtime,
-		DeadlineAt:                  nil,
+		ShouldClassify:     true,
+		ModelBundleVersion: "bundle-v1",
+		ExecutionMode:      domain.ExecutionModeProduction,
+		Priority:           ClassificationPriorityRealtime,
+		DeadlineAt:         nil,
 	}
 }
 

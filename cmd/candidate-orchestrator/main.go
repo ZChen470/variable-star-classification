@@ -48,7 +48,6 @@ func run() error {
 	// 初始化业务组件
 	policy, err := application.NewClassificationPolicyV1(
 		config.modelBundleVersion,
-		config.classificationPolicyVersion,
 	)
 	if err != nil {
 		return fmt.Errorf(

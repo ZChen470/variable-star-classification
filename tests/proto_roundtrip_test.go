@@ -11,15 +11,14 @@ import (
 
 func TestClassificationCommandRoundTrip(t *testing.T) {
 	want := &classificationv1.ClassificationCommand{
-		JobId:                       "job-example",
-		ObjectId:                    "object-001",
-		CandidateRevision:           7,
-		LightCurveRevision:          11,
-		DeclaredEligibleEpochCount:  20,
-		ModelBundleVersion:          "bundle-v1",
-		ClassificationPolicyVersion: "classification-policy-v1",
-		ExecutionMode:               classificationv1.ExecutionMode_EXECUTION_MODE_PRODUCTION,
-		Priority:                    classificationv1.ClassificationPriority_CLASSIFICATION_PRIORITY_REALTIME,
+		JobId:                      "job-example",
+		ObjectId:                   "object-001",
+		CandidateRevision:          7,
+		LightCurveRevision:         11,
+		DeclaredEligibleEpochCount: 20,
+		ModelBundleVersion:         "bundle-v1",
+		ExecutionMode:              classificationv1.ExecutionMode_EXECUTION_MODE_PRODUCTION,
+		Priority:                   classificationv1.ClassificationPriority_CLASSIFICATION_PRIORITY_REALTIME,
 		CreatedAt: timestamppb.New(
 			time.Date(2026, time.July, 23, 12, 0, 0, 0, time.UTC),
 		),

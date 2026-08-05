@@ -9,26 +9,24 @@ import (
 )
 
 const (
-	envKafkaBrokers                = "KAFKA_BROKERS"
-	envKafkaConsumerGroup          = "KAFKA_CONSUMER_GROUP"
-	envKafkaClientID               = "KAFKA_CLIENT_ID"
-	envCandidateTopic              = "CANDIDATE_TOPIC"
-	envClassificationCommandTopic  = "CLASSIFICATION_COMMAND_TOPIC"
-	envCandidateDLQTopic           = "CANDIDATE_DLQ_TOPIC"
-	envModelBundleVersion          = "MODEL_BUNDLE_VERSION"
-	envClassificationPolicyVersion = "CLASSIFICATION_POLICY_VERSION"
-	defaultKafkaClientID           = project.Name + "-candidate-orchestrator"
+	envKafkaBrokers               = "KAFKA_BROKERS"
+	envKafkaConsumerGroup         = "KAFKA_CONSUMER_GROUP"
+	envKafkaClientID              = "KAFKA_CLIENT_ID"
+	envCandidateTopic             = "CANDIDATE_TOPIC"
+	envClassificationCommandTopic = "CLASSIFICATION_COMMAND_TOPIC"
+	envCandidateDLQTopic          = "CANDIDATE_DLQ_TOPIC"
+	envModelBundleVersion         = "MODEL_BUNDLE_VERSION"
+	defaultKafkaClientID          = project.Name + "-candidate-orchestrator"
 )
 
 type candidateOrchestratorConfig struct {
-	kafkaBrokers                []string
-	kafkaConsumerGroup          string
-	kafkaClientID               string
-	candidateTopic              string
-	classificationCommandTopic  string
-	candidateDLQTopic           string
-	modelBundleVersion          string
-	classificationPolicyVersion string
+	kafkaBrokers               []string
+	kafkaConsumerGroup         string
+	kafkaClientID              string
+	candidateTopic             string
+	classificationCommandTopic string
+	candidateDLQTopic          string
+	modelBundleVersion         string
 }
 
 func loadCandidateOrchestratorConfig(lookup func(string) (string, bool)) (candidateOrchestratorConfig, error) {
@@ -90,14 +88,6 @@ func loadCandidateOrchestratorConfig(lookup func(string) (string, bool)) (candid
 		return candidateOrchestratorConfig{}, err
 	}
 
-	classificationPolicyVersion, err := requiredExactEnvironmentValue(
-		lookup,
-		envClassificationPolicyVersion,
-	)
-	if err != nil {
-		return candidateOrchestratorConfig{}, err
-	}
-
 	clientID := defaultKafkaClientID
 	if rawClientID, ok := lookup(envKafkaClientID); ok {
 		trimmedClientID := strings.TrimSpace(rawClientID)
@@ -107,14 +97,13 @@ func loadCandidateOrchestratorConfig(lookup func(string) (string, bool)) (candid
 	}
 
 	return candidateOrchestratorConfig{
-		kafkaBrokers:                brokers,
-		kafkaConsumerGroup:          consumerGroup,
-		kafkaClientID:               clientID,
-		candidateTopic:              candidateTopic,
-		classificationCommandTopic:  commandTopic,
-		candidateDLQTopic:           dlqTopic,
-		modelBundleVersion:          modelBundleVersion,
-		classificationPolicyVersion: classificationPolicyVersion,
+		kafkaBrokers:               brokers,
+		kafkaConsumerGroup:         consumerGroup,
+		kafkaClientID:              clientID,
+		candidateTopic:             candidateTopic,
+		classificationCommandTopic: commandTopic,
+		candidateDLQTopic:          dlqTopic,
+		modelBundleVersion:         modelBundleVersion,
 	}, nil
 }
 

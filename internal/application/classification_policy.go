@@ -22,43 +22,36 @@ const (
 
 // ClassificationPolicyDecision 是 Policy 对已校验 CandidateEvent 的判断结果。
 type ClassificationPolicyDecision struct {
-	ShouldClassify              bool
-	ModelBundleVersion          string
-	ClassificationPolicyVersion string
-	ExecutionMode               domain.ExecutionMode
-	Priority                    ClassificationPriority
-	DeadlineAt                  *time.Time
+	ShouldClassify     bool
+	ModelBundleVersion string
+	ExecutionMode      domain.ExecutionMode
+	Priority           ClassificationPriority
+	DeadlineAt         *time.Time
 }
 
 // ClassificationPolicyV1 是最小的候选分类策略
 //
 // 当前版本固定使用 PRODUCTION REALTIME 并不设置 deadline
 type ClassificationPolicyV1 struct {
-	modelBundleVersion          string
-	classificationPolicyVersion string
+	modelBundleVersion string
 }
 
 // NewClassificationPolicyV1 创建并校验最小分类策略
-func NewClassificationPolicyV1(modelBundleVersion string, classificationPolicyVersion string) (ClassificationPolicyV1, error) {
+func NewClassificationPolicyV1(modelBundleVersion string) (ClassificationPolicyV1, error) {
 	// 1 参数校验
 	if err := validateClassificationPolicyString("model bundle version", modelBundleVersion); err != nil {
 		return ClassificationPolicyV1{}, err
 	}
 
-	if err := validateClassificationPolicyString("classification policy version", classificationPolicyVersion); err != nil {
-		return ClassificationPolicyV1{}, err
-	}
-
 	// 构建分类策略
 	return ClassificationPolicyV1{
-		modelBundleVersion:          modelBundleVersion,
-		classificationPolicyVersion: classificationPolicyVersion,
+		modelBundleVersion: modelBundleVersion,
 	}, nil
 }
 
 // Evaluate 判断已校验的候选事件是否需要生成 classificationCommand
 func (policy ClassificationPolicyV1) Evaluate(input CandidateEventInput) (ClassificationPolicyDecision, error) {
-	if policy.modelBundleVersion == "" || policy.classificationPolicyVersion == "" {
+	if policy.modelBundleVersion == "" {
 		return ClassificationPolicyDecision{}, errors.New("classification policy is not configured")
 	}
 
@@ -73,12 +66,11 @@ func (policy ClassificationPolicyV1) Evaluate(input CandidateEventInput) (Classi
 	}
 
 	return ClassificationPolicyDecision{
-		ShouldClassify:              true,
-		ModelBundleVersion:          policy.modelBundleVersion,
-		ClassificationPolicyVersion: policy.classificationPolicyVersion,
-		ExecutionMode:               domain.ExecutionModeProduction,
-		Priority:                    ClassificationPriorityRealtime,
-		DeadlineAt:                  nil,
+		ShouldClassify:     true,
+		ModelBundleVersion: policy.modelBundleVersion,
+		ExecutionMode:      domain.ExecutionModeProduction,
+		Priority:           ClassificationPriorityRealtime,
+		DeadlineAt:         nil,
 	}, nil
 
 }

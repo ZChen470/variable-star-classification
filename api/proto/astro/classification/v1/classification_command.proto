@@ -8,6 +8,9 @@ import "google/protobuf/timestamp.proto";
 option go_package = "github.com/ZChen470/variable-star-classification/gen/go/astro/classification/v1;classificationv1";
 
 message ClassificationCommand {
+  reserved 7;
+  reserved "classification_policy_version";
+
   string job_id = 1;
 
   string object_id = 2;
@@ -21,8 +24,6 @@ message ClassificationCommand {
   uint32 declared_eligible_epoch_count = 5;
 
   string model_bundle_version = 6;
-
-  string classification_policy_version = 7;
 
   ExecutionMode execution_mode = 8;
 
