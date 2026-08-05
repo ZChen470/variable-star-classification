@@ -46,36 +46,31 @@ message ClassificationResult {
 
   LeafClass predicted_leaf_class = 17;
 
-  ClassificationTiming timing = 18;
+  // Timing 已退役，字段号和名称禁止复用。
+  reserved 18;
+  reserved "timing";
 
   google.protobuf.Timestamp completed_at = 19;
 
   TraceContext trace_context = 20;
 
-  // 结果所属执行模式；Result Writer 据此判断是否允许更新 CurrentClassification。
+  // Result Writer 据此判断是否允许更新 CurrentClassification。
   ExecutionMode execution_mode = 21;
 }
 
 message ResolvedModelVersions {
-  reserved 3, 4;
-  reserved "xgboost_model_version", "transformer_model_version";
-
+  // ModelBundleVersion 是模型、预处理、Schema 和 Serving Contract
+  // 组合制品的唯一追溯身份。
   string model_bundle_version = 1;
 
-  string taxonomy_version = 2;
-
-  string preprocessing_version = 5;
-  string feature_schema_version = 6;
-  string tensor_schema_version = 7;
-
-  string classification_policy_version = 8;
-}
-
-message ClassificationTiming {
-  uint64 data_fetch_ms = 1;
-  uint64 preprocessing_ms = 2;
-  uint64 xgboost_inference_ms = 3;
-  uint64 transformer_inference_ms = 4;
-  uint64 fusion_ms = 5;
-  uint64 total_ms = 6;
+  // 旧的内部模型和 Schema 版本字段已退役。
+  reserved 2, 3, 4, 5, 6, 7;
+  reserved
+      "taxonomy_version",
+      "xgboost_model_version",
+      "transformer_model_version",
+      "preprocessing_version",
+      "feature_schema_version",
+      "tensor_schema_version",
+      "classification_policy_version";
 }

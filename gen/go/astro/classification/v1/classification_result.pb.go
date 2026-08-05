@@ -45,10 +45,9 @@ type ClassificationResult struct {
 	LeafProbabilities              *LeafProbabilities            `protobuf:"bytes,15,opt,name=leaf_probabilities,json=leafProbabilities,proto3" json:"leaf_probabilities,omitempty"`
 	PredictedCoarseClass           CoarseClass                   `protobuf:"varint,16,opt,name=predicted_coarse_class,json=predictedCoarseClass,proto3,enum=astro.classification.v1.CoarseClass" json:"predicted_coarse_class,omitempty"`
 	PredictedLeafClass             LeafClass                     `protobuf:"varint,17,opt,name=predicted_leaf_class,json=predictedLeafClass,proto3,enum=astro.classification.v1.LeafClass" json:"predicted_leaf_class,omitempty"`
-	Timing                         *ClassificationTiming         `protobuf:"bytes,18,opt,name=timing,proto3" json:"timing,omitempty"`
 	CompletedAt                    *timestamppb.Timestamp        `protobuf:"bytes,19,opt,name=completed_at,json=completedAt,proto3" json:"completed_at,omitempty"`
 	TraceContext                   *TraceContext                 `protobuf:"bytes,20,opt,name=trace_context,json=traceContext,proto3" json:"trace_context,omitempty"`
-	// 结果所属执行模式；Result Writer 据此判断是否允许更新 CurrentClassification。
+	// Result Writer 据此判断是否允许更新 CurrentClassification。
 	ExecutionMode ExecutionMode `protobuf:"varint,21,opt,name=execution_mode,json=executionMode,proto3,enum=astro.classification.v1.ExecutionMode" json:"execution_mode,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -203,13 +202,6 @@ func (x *ClassificationResult) GetPredictedLeafClass() LeafClass {
 	return LeafClass_LEAF_CLASS_UNSPECIFIED
 }
 
-func (x *ClassificationResult) GetTiming() *ClassificationTiming {
-	if x != nil {
-		return x.Timing
-	}
-	return nil
-}
-
 func (x *ClassificationResult) GetCompletedAt() *timestamppb.Timestamp {
 	if x != nil {
 		return x.CompletedAt
@@ -232,15 +224,12 @@ func (x *ClassificationResult) GetExecutionMode() ExecutionMode {
 }
 
 type ResolvedModelVersions struct {
-	state                       protoimpl.MessageState `protogen:"open.v1"`
-	ModelBundleVersion          string                 `protobuf:"bytes,1,opt,name=model_bundle_version,json=modelBundleVersion,proto3" json:"model_bundle_version,omitempty"`
-	TaxonomyVersion             string                 `protobuf:"bytes,2,opt,name=taxonomy_version,json=taxonomyVersion,proto3" json:"taxonomy_version,omitempty"`
-	PreprocessingVersion        string                 `protobuf:"bytes,5,opt,name=preprocessing_version,json=preprocessingVersion,proto3" json:"preprocessing_version,omitempty"`
-	FeatureSchemaVersion        string                 `protobuf:"bytes,6,opt,name=feature_schema_version,json=featureSchemaVersion,proto3" json:"feature_schema_version,omitempty"`
-	TensorSchemaVersion         string                 `protobuf:"bytes,7,opt,name=tensor_schema_version,json=tensorSchemaVersion,proto3" json:"tensor_schema_version,omitempty"`
-	ClassificationPolicyVersion string                 `protobuf:"bytes,8,opt,name=classification_policy_version,json=classificationPolicyVersion,proto3" json:"classification_policy_version,omitempty"`
-	unknownFields               protoimpl.UnknownFields
-	sizeCache                   protoimpl.SizeCache
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// ModelBundleVersion 是模型、预处理、Schema 和 Serving Contract
+	// 组合制品的唯一追溯身份。
+	ModelBundleVersion string `protobuf:"bytes,1,opt,name=model_bundle_version,json=modelBundleVersion,proto3" json:"model_bundle_version,omitempty"`
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
 }
 
 func (x *ResolvedModelVersions) Reset() {
@@ -280,130 +269,12 @@ func (x *ResolvedModelVersions) GetModelBundleVersion() string {
 	return ""
 }
 
-func (x *ResolvedModelVersions) GetTaxonomyVersion() string {
-	if x != nil {
-		return x.TaxonomyVersion
-	}
-	return ""
-}
-
-func (x *ResolvedModelVersions) GetPreprocessingVersion() string {
-	if x != nil {
-		return x.PreprocessingVersion
-	}
-	return ""
-}
-
-func (x *ResolvedModelVersions) GetFeatureSchemaVersion() string {
-	if x != nil {
-		return x.FeatureSchemaVersion
-	}
-	return ""
-}
-
-func (x *ResolvedModelVersions) GetTensorSchemaVersion() string {
-	if x != nil {
-		return x.TensorSchemaVersion
-	}
-	return ""
-}
-
-func (x *ResolvedModelVersions) GetClassificationPolicyVersion() string {
-	if x != nil {
-		return x.ClassificationPolicyVersion
-	}
-	return ""
-}
-
-type ClassificationTiming struct {
-	state                  protoimpl.MessageState `protogen:"open.v1"`
-	DataFetchMs            uint64                 `protobuf:"varint,1,opt,name=data_fetch_ms,json=dataFetchMs,proto3" json:"data_fetch_ms,omitempty"`
-	PreprocessingMs        uint64                 `protobuf:"varint,2,opt,name=preprocessing_ms,json=preprocessingMs,proto3" json:"preprocessing_ms,omitempty"`
-	XgboostInferenceMs     uint64                 `protobuf:"varint,3,opt,name=xgboost_inference_ms,json=xgboostInferenceMs,proto3" json:"xgboost_inference_ms,omitempty"`
-	TransformerInferenceMs uint64                 `protobuf:"varint,4,opt,name=transformer_inference_ms,json=transformerInferenceMs,proto3" json:"transformer_inference_ms,omitempty"`
-	FusionMs               uint64                 `protobuf:"varint,5,opt,name=fusion_ms,json=fusionMs,proto3" json:"fusion_ms,omitempty"`
-	TotalMs                uint64                 `protobuf:"varint,6,opt,name=total_ms,json=totalMs,proto3" json:"total_ms,omitempty"`
-	unknownFields          protoimpl.UnknownFields
-	sizeCache              protoimpl.SizeCache
-}
-
-func (x *ClassificationTiming) Reset() {
-	*x = ClassificationTiming{}
-	mi := &file_astro_classification_v1_classification_result_proto_msgTypes[2]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *ClassificationTiming) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*ClassificationTiming) ProtoMessage() {}
-
-func (x *ClassificationTiming) ProtoReflect() protoreflect.Message {
-	mi := &file_astro_classification_v1_classification_result_proto_msgTypes[2]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use ClassificationTiming.ProtoReflect.Descriptor instead.
-func (*ClassificationTiming) Descriptor() ([]byte, []int) {
-	return file_astro_classification_v1_classification_result_proto_rawDescGZIP(), []int{2}
-}
-
-func (x *ClassificationTiming) GetDataFetchMs() uint64 {
-	if x != nil {
-		return x.DataFetchMs
-	}
-	return 0
-}
-
-func (x *ClassificationTiming) GetPreprocessingMs() uint64 {
-	if x != nil {
-		return x.PreprocessingMs
-	}
-	return 0
-}
-
-func (x *ClassificationTiming) GetXgboostInferenceMs() uint64 {
-	if x != nil {
-		return x.XgboostInferenceMs
-	}
-	return 0
-}
-
-func (x *ClassificationTiming) GetTransformerInferenceMs() uint64 {
-	if x != nil {
-		return x.TransformerInferenceMs
-	}
-	return 0
-}
-
-func (x *ClassificationTiming) GetFusionMs() uint64 {
-	if x != nil {
-		return x.FusionMs
-	}
-	return 0
-}
-
-func (x *ClassificationTiming) GetTotalMs() uint64 {
-	if x != nil {
-		return x.TotalMs
-	}
-	return 0
-}
-
 var File_astro_classification_v1_classification_result_proto protoreflect.FileDescriptor
 
 const file_astro_classification_v1_classification_result_proto_rawDesc = "" +
 	"\n" +
-	"3astro/classification/v1/classification_result.proto\x12\x17astro.classification.v1\x1a$astro/classification/v1/common.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xa8\v\n" +
+	"3astro/classification/v1/classification_result.proto\x12\x17astro.classification.v1\x1a$astro/classification/v1/common.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xef\n" +
+	"\n" +
 	"\x14ClassificationResult\x12\x15\n" +
 	"\x06run_id\x18\x01 \x01(\tR\x05runId\x12\x15\n" +
 	"\x06job_id\x18\x02 \x01(\tR\x05jobId\x12\x1b\n" +
@@ -422,26 +293,13 @@ const file_astro_classification_v1_classification_result_proto_rawDesc = "" +
 	"\x1efine_conditional_probabilities\x18\x0e \x01(\v25.astro.classification.v1.FineConditionalProbabilitiesR\x1cfineConditionalProbabilities\x12Y\n" +
 	"\x12leaf_probabilities\x18\x0f \x01(\v2*.astro.classification.v1.LeafProbabilitiesR\x11leafProbabilities\x12Z\n" +
 	"\x16predicted_coarse_class\x18\x10 \x01(\x0e2$.astro.classification.v1.CoarseClassR\x14predictedCoarseClass\x12T\n" +
-	"\x14predicted_leaf_class\x18\x11 \x01(\x0e2\".astro.classification.v1.LeafClassR\x12predictedLeafClass\x12E\n" +
-	"\x06timing\x18\x12 \x01(\v2-.astro.classification.v1.ClassificationTimingR\x06timing\x12=\n" +
+	"\x14predicted_leaf_class\x18\x11 \x01(\x0e2\".astro.classification.v1.LeafClassR\x12predictedLeafClass\x12=\n" +
 	"\fcompleted_at\x18\x13 \x01(\v2\x1a.google.protobuf.TimestampR\vcompletedAt\x12J\n" +
 	"\rtrace_context\x18\x14 \x01(\v2%.astro.classification.v1.TraceContextR\ftraceContext\x12M\n" +
 	"\x0eexecution_mode\x18\x15 \x01(\x0e2&.astro.classification.v1.ExecutionModeR\rexecutionModeB\x17\n" +
-	"\x15_coarse_source_run_id\"\x95\x03\n" +
+	"\x15_coarse_source_run_idJ\x04\b\x12\x10\x13R\x06timing\"\x96\x02\n" +
 	"\x15ResolvedModelVersions\x120\n" +
-	"\x14model_bundle_version\x18\x01 \x01(\tR\x12modelBundleVersion\x12)\n" +
-	"\x10taxonomy_version\x18\x02 \x01(\tR\x0ftaxonomyVersion\x123\n" +
-	"\x15preprocessing_version\x18\x05 \x01(\tR\x14preprocessingVersion\x124\n" +
-	"\x16feature_schema_version\x18\x06 \x01(\tR\x14featureSchemaVersion\x122\n" +
-	"\x15tensor_schema_version\x18\a \x01(\tR\x13tensorSchemaVersion\x12B\n" +
-	"\x1dclassification_policy_version\x18\b \x01(\tR\x1bclassificationPolicyVersionJ\x04\b\x03\x10\x04J\x04\b\x04\x10\x05R\x15xgboost_model_versionR\x19transformer_model_version\"\x89\x02\n" +
-	"\x14ClassificationTiming\x12\"\n" +
-	"\rdata_fetch_ms\x18\x01 \x01(\x04R\vdataFetchMs\x12)\n" +
-	"\x10preprocessing_ms\x18\x02 \x01(\x04R\x0fpreprocessingMs\x120\n" +
-	"\x14xgboost_inference_ms\x18\x03 \x01(\x04R\x12xgboostInferenceMs\x128\n" +
-	"\x18transformer_inference_ms\x18\x04 \x01(\x04R\x16transformerInferenceMs\x12\x1b\n" +
-	"\tfusion_ms\x18\x05 \x01(\x04R\bfusionMs\x12\x19\n" +
-	"\btotal_ms\x18\x06 \x01(\x04R\atotalMsBbZ`github.com/ZChen470/variable-star-classification/gen/go/astro/classification/v1;classificationv1b\x06proto3"
+	"\x14model_bundle_version\x18\x01 \x01(\tR\x12modelBundleVersionJ\x04\b\x02\x10\x03J\x04\b\x03\x10\x04J\x04\b\x04\x10\x05J\x04\b\x05\x10\x06J\x04\b\x06\x10\aJ\x04\b\a\x10\bR\x10taxonomy_versionR\x15xgboost_model_versionR\x19transformer_model_versionR\x15preprocessing_versionR\x16feature_schema_versionR\x15tensor_schema_versionR\x1dclassification_policy_versionBbZ`github.com/ZChen470/variable-star-classification/gen/go/astro/classification/v1;classificationv1b\x06proto3"
 
 var (
 	file_astro_classification_v1_classification_result_proto_rawDescOnce sync.Once
@@ -455,38 +313,36 @@ func file_astro_classification_v1_classification_result_proto_rawDescGZIP() []by
 	return file_astro_classification_v1_classification_result_proto_rawDescData
 }
 
-var file_astro_classification_v1_classification_result_proto_msgTypes = make([]protoimpl.MessageInfo, 3)
+var file_astro_classification_v1_classification_result_proto_msgTypes = make([]protoimpl.MessageInfo, 2)
 var file_astro_classification_v1_classification_result_proto_goTypes = []any{
 	(*ClassificationResult)(nil),         // 0: astro.classification.v1.ClassificationResult
 	(*ResolvedModelVersions)(nil),        // 1: astro.classification.v1.ResolvedModelVersions
-	(*ClassificationTiming)(nil),         // 2: astro.classification.v1.ClassificationTiming
-	(CoarseSourceType)(0),                // 3: astro.classification.v1.CoarseSourceType
-	(*CoarseProbabilities)(nil),          // 4: astro.classification.v1.CoarseProbabilities
-	(*FineConditionalProbabilities)(nil), // 5: astro.classification.v1.FineConditionalProbabilities
-	(*LeafProbabilities)(nil),            // 6: astro.classification.v1.LeafProbabilities
-	(CoarseClass)(0),                     // 7: astro.classification.v1.CoarseClass
-	(LeafClass)(0),                       // 8: astro.classification.v1.LeafClass
-	(*timestamppb.Timestamp)(nil),        // 9: google.protobuf.Timestamp
-	(*TraceContext)(nil),                 // 10: astro.classification.v1.TraceContext
-	(ExecutionMode)(0),                   // 11: astro.classification.v1.ExecutionMode
+	(CoarseSourceType)(0),                // 2: astro.classification.v1.CoarseSourceType
+	(*CoarseProbabilities)(nil),          // 3: astro.classification.v1.CoarseProbabilities
+	(*FineConditionalProbabilities)(nil), // 4: astro.classification.v1.FineConditionalProbabilities
+	(*LeafProbabilities)(nil),            // 5: astro.classification.v1.LeafProbabilities
+	(CoarseClass)(0),                     // 6: astro.classification.v1.CoarseClass
+	(LeafClass)(0),                       // 7: astro.classification.v1.LeafClass
+	(*timestamppb.Timestamp)(nil),        // 8: google.protobuf.Timestamp
+	(*TraceContext)(nil),                 // 9: astro.classification.v1.TraceContext
+	(ExecutionMode)(0),                   // 10: astro.classification.v1.ExecutionMode
 }
 var file_astro_classification_v1_classification_result_proto_depIdxs = []int32{
-	3,  // 0: astro.classification.v1.ClassificationResult.coarse_source_type:type_name -> astro.classification.v1.CoarseSourceType
+	2,  // 0: astro.classification.v1.ClassificationResult.coarse_source_type:type_name -> astro.classification.v1.CoarseSourceType
 	1,  // 1: astro.classification.v1.ClassificationResult.versions:type_name -> astro.classification.v1.ResolvedModelVersions
-	4,  // 2: astro.classification.v1.ClassificationResult.coarse_probabilities:type_name -> astro.classification.v1.CoarseProbabilities
-	5,  // 3: astro.classification.v1.ClassificationResult.fine_conditional_probabilities:type_name -> astro.classification.v1.FineConditionalProbabilities
-	6,  // 4: astro.classification.v1.ClassificationResult.leaf_probabilities:type_name -> astro.classification.v1.LeafProbabilities
-	7,  // 5: astro.classification.v1.ClassificationResult.predicted_coarse_class:type_name -> astro.classification.v1.CoarseClass
-	8,  // 6: astro.classification.v1.ClassificationResult.predicted_leaf_class:type_name -> astro.classification.v1.LeafClass
-	2,  // 7: astro.classification.v1.ClassificationResult.timing:type_name -> astro.classification.v1.ClassificationTiming
-	9,  // 8: astro.classification.v1.ClassificationResult.completed_at:type_name -> google.protobuf.Timestamp
-	10, // 9: astro.classification.v1.ClassificationResult.trace_context:type_name -> astro.classification.v1.TraceContext
-	11, // 10: astro.classification.v1.ClassificationResult.execution_mode:type_name -> astro.classification.v1.ExecutionMode
-	11, // [11:11] is the sub-list for method output_type
-	11, // [11:11] is the sub-list for method input_type
-	11, // [11:11] is the sub-list for extension type_name
-	11, // [11:11] is the sub-list for extension extendee
-	0,  // [0:11] is the sub-list for field type_name
+	3,  // 2: astro.classification.v1.ClassificationResult.coarse_probabilities:type_name -> astro.classification.v1.CoarseProbabilities
+	4,  // 3: astro.classification.v1.ClassificationResult.fine_conditional_probabilities:type_name -> astro.classification.v1.FineConditionalProbabilities
+	5,  // 4: astro.classification.v1.ClassificationResult.leaf_probabilities:type_name -> astro.classification.v1.LeafProbabilities
+	6,  // 5: astro.classification.v1.ClassificationResult.predicted_coarse_class:type_name -> astro.classification.v1.CoarseClass
+	7,  // 6: astro.classification.v1.ClassificationResult.predicted_leaf_class:type_name -> astro.classification.v1.LeafClass
+	8,  // 7: astro.classification.v1.ClassificationResult.completed_at:type_name -> google.protobuf.Timestamp
+	9,  // 8: astro.classification.v1.ClassificationResult.trace_context:type_name -> astro.classification.v1.TraceContext
+	10, // 9: astro.classification.v1.ClassificationResult.execution_mode:type_name -> astro.classification.v1.ExecutionMode
+	10, // [10:10] is the sub-list for method output_type
+	10, // [10:10] is the sub-list for method input_type
+	10, // [10:10] is the sub-list for extension type_name
+	10, // [10:10] is the sub-list for extension extendee
+	0,  // [0:10] is the sub-list for field type_name
 }
 
 func init() { file_astro_classification_v1_classification_result_proto_init() }
@@ -502,7 +358,7 @@ func file_astro_classification_v1_classification_result_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_astro_classification_v1_classification_result_proto_rawDesc), len(file_astro_classification_v1_classification_result_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   3,
+			NumMessages:   2,
 			NumExtensions: 0,
 			NumServices:   0,
 		},
