@@ -109,22 +109,18 @@ func (class LeafClass) IsValid() bool {
 // ResolvedModelVersions 保存一次分类实际解析出的全部模型与 Schema 版本。
 type ResolvedModelVersions struct {
 	ModelBundleVersion          string
-	TaxonomyVersion             string
-	PreprocessingVersion        string
-	FeatureSchemaVersion        string
-	TensorSchemaVersion         string
 	ClassificationPolicyVersion string
 }
 
-// ClassificationTiming 保存一次成功分类各阶段的耗时。
-type ClassificationTiming struct {
-	DataFetchMS            uint64
-	PreprocessingMS        uint64
-	XGBoostInferenceMS     uint64
-	TransformerInferenceMS uint64
-	FusionMS               uint64
-	TotalMS                uint64
-}
+//// ClassificationTiming 保存一次成功分类各阶段的耗时。
+//type ClassificationTiming struct {
+//	DataFetchMS            uint64
+//	PreprocessingMS        uint64
+//	XGBoostInferenceMS     uint64
+//	TransformerInferenceMS uint64
+//	FusionMS               uint64
+//	TotalMS                uint64
+//}
 
 // ClassificationRun 是数据库保存的一次成功分类事实。
 //
@@ -153,8 +149,6 @@ type ClassificationRun struct {
 
 	PredictedCoarseClass CoarseClass
 	PredictedLeafClass   LeafClass
-
-	Timing ClassificationTiming
 
 	CompletedAt time.Time
 	PersistedAt time.Time

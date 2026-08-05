@@ -311,10 +311,6 @@ func classificationRunInsertArgument(run domain.ClassificationRun) ([]any, error
 		coarseSourceEpochCount,
 		run.XGBoostExecuted,
 		run.Versions.ModelBundleVersion,
-		run.Versions.TaxonomyVersion,
-		run.Versions.PreprocessingVersion,
-		run.Versions.FeatureSchemaVersion,
-		run.Versions.TensorSchemaVersion,
 		run.Versions.ClassificationPolicyVersion,
 		run.CoarseProbabilities[:],
 		run.FineConditionalProbabilities[:],
@@ -463,12 +459,7 @@ type classificationRunRecord struct {
 	coarseSourceEpochCount         int32
 	xgboostExecuted                bool
 
-	modelBundleVersion          string
-	taxonomyVersion             string
-	preprocessingVersion        string
-	featureSchemaVersion        string
-	tensorSchemaVersion         string
-	classificationPolicyVersion string
+	modelBundleVersion string
 
 	coarseProbabilities          []float32
 	fineConditionalProbabilities []float32
@@ -496,11 +487,6 @@ func (record *classificationRunRecord) scanDestinations() []any {
 		&record.coarseSourceEpochCount,
 		&record.xgboostExecuted,
 		&record.modelBundleVersion,
-		&record.taxonomyVersion,
-		&record.preprocessingVersion,
-		&record.featureSchemaVersion,
-		&record.tensorSchemaVersion,
-		&record.classificationPolicyVersion,
 		&record.coarseProbabilities,
 		&record.fineConditionalProbabilities,
 		&record.leafProbabilities,
@@ -571,12 +557,7 @@ func (
 		CoarseSourceEpochCount:         coarseSourceEpochCount,
 		XGBoostExecuted:                record.xgboostExecuted,
 		Versions: domain.ResolvedModelVersions{
-			ModelBundleVersion:          record.modelBundleVersion,
-			TaxonomyVersion:             record.taxonomyVersion,
-			PreprocessingVersion:        record.preprocessingVersion,
-			FeatureSchemaVersion:        record.featureSchemaVersion,
-			TensorSchemaVersion:         record.tensorSchemaVersion,
-			ClassificationPolicyVersion: record.classificationPolicyVersion,
+			ModelBundleVersion: record.modelBundleVersion,
 		},
 		PredictedCoarseClass: domain.CoarseClass(
 			record.predictedCoarseClass,

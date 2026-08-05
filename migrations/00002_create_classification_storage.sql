@@ -20,11 +20,6 @@ CREATE TABLE classification_runs (
     xgboost_executed BOOLEAN NOT NULL,
 
     model_bundle_version TEXT NOT NULL,
-    taxonomy_version TEXT NOT NULL,
-    preprocessing_version TEXT NOT NULL,
-    feature_schema_version TEXT NOT NULL,
-    tensor_schema_version TEXT NOT NULL,
-    classification_policy_version TEXT NOT NULL,
 
     coarse_probabilities REAL[] NOT NULL,
     fine_conditional_probabilities REAL[] NOT NULL,

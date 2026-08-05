@@ -55,14 +55,8 @@ type ServingEntrypointMetadata struct {
 // 它只描述 Command 已绑定 Bundle 的精确入口和契约，不包含部署地址，
 // 也不允许 Resolver 自动选择 latest。
 type ServingBundleMetadata struct {
-	ModelBundleVersion          string
-	TaxonomyVersion             string
-	ClassificationPolicyVersion string
-	FeatureSchemaVersion        string
-	PreprocessingVersion        string
-	TensorSchemaVersion         string
-	FusionContractVersion       string
-	ServingContractVersion      string
+	ModelBundleVersion     string
+	ServingContractVersion string
 
 	Entrypoint ServingEntrypointMetadata
 

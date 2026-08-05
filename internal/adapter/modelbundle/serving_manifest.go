@@ -197,14 +197,8 @@ func mapServingMetadata(
 	manifest servingManifestV2,
 ) application.ServingBundleMetadata {
 	metadata := application.ServingBundleMetadata{
-		ModelBundleVersion:          manifest.ModelBundleVersion,
-		TaxonomyVersion:             manifest.TaxonomyVersion,
-		ClassificationPolicyVersion: manifest.ClassificationPolicyVersion,
-		FeatureSchemaVersion:        manifest.FeatureSchemaVersion,
-		PreprocessingVersion:        manifest.PreprocessingVersion,
-		TensorSchemaVersion:         manifest.TensorSchemaVersion,
-		FusionContractVersion:       manifest.FusionContractVersion,
-		ServingContractVersion:      manifest.ServingContractVersion,
+		ModelBundleVersion:     manifest.ModelBundleVersion,
+		ServingContractVersion: manifest.ServingContractVersion,
 		Entrypoint: application.ServingEntrypointMetadata{
 			ModelName:    manifest.TritonEntrypoint.ModelName,
 			ModelVersion: manifest.TritonEntrypoint.ModelVersion,
@@ -270,17 +264,11 @@ func requireToken(name, value string) error {
 // 以下结构覆盖 v2 顶层和 Go Adapter 依赖的内部字段。
 // 其他科学实现细节使用 yaml.Node 保存，不由 Go Loader 重复解释。
 type servingManifestV2 struct {
-	SchemaVersion               string `yaml:"schema_version"`
-	ManifestStatus              string `yaml:"manifest_status"`
-	BundleID                    string `yaml:"bundle_id"`
-	ModelBundleVersion          string `yaml:"model_bundle_version"`
-	TaxonomyVersion             string `yaml:"taxonomy_version"`
-	ClassificationPolicyVersion string `yaml:"classification_policy_version"`
-	FeatureSchemaVersion        string `yaml:"feature_schema_version"`
-	PreprocessingVersion        string `yaml:"preprocessing_version"`
-	TensorSchemaVersion         string `yaml:"tensor_schema_version"`
-	FusionContractVersion       string `yaml:"fusion_contract_version"`
-	ServingContractVersion      string `yaml:"serving_contract_version"`
+	SchemaVersion          string `yaml:"schema_version"`
+	ManifestStatus         string `yaml:"manifest_status"`
+	BundleID               string `yaml:"bundle_id"`
+	ModelBundleVersion     string `yaml:"model_bundle_version"`
+	ServingContractVersion string `yaml:"serving_contract_version"`
 
 	TritonEntrypoint tritonEntrypointManifest `yaml:"triton_entrypoint"`
 

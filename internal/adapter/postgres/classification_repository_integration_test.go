@@ -426,10 +426,6 @@ func newTestClassificationRun(
 
 		Versions: domain.ResolvedModelVersions{
 			ModelBundleVersion:          spec.bundleVersion,
-			TaxonomyVersion:             "taxonomy-v1",
-			PreprocessingVersion:        "preprocessing-v1",
-			FeatureSchemaVersion:        "feature-v1",
-			TensorSchemaVersion:         "tensor-v1",
 			ClassificationPolicyVersion: policyVersion,
 		},
 

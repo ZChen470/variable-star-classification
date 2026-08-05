@@ -163,14 +163,8 @@ func TestResolverRejectsNilContextWithoutRecordingCall(t *testing.T) {
 
 func testMetadata(modelBundleVersion string) application.ServingBundleMetadata {
 	return application.ServingBundleMetadata{
-		ModelBundleVersion:          modelBundleVersion,
-		TaxonomyVersion:             "taxonomy-v1",
-		ClassificationPolicyVersion: "classification-policy-v1",
-		FeatureSchemaVersion:        "xgb-feature-schema-v1",
-		PreprocessingVersion:        "transformer-preprocessing-v2",
-		TensorSchemaVersion:         "transformer-tensor-schema-v2",
-		FusionContractVersion:       "hierarchical-fusion-v1",
-		ServingContractVersion:      "variable-star-serving-contract-v1",
+		ModelBundleVersion:     modelBundleVersion,
+		ServingContractVersion: "variable-star-serving-contract-v1",
 		Entrypoint: application.ServingEntrypointMetadata{
 			ModelName:        "variable_star_classifier",
 			ModelVersion:     "1",
