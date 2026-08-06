@@ -86,6 +86,22 @@ func TestClassificationWorkerHandlerPublishesResult(
 		)
 	}
 
+	requestIDs := fixture.classifier.RequestIDs()
+	if len(requestIDs) != 1 {
+		t.Fatalf(
+			"classifier request ID count = %d, want 1",
+			len(requestIDs),
+		)
+	}
+
+	if requestIDs[0] != fixture.command.GetJobId() {
+		t.Fatalf(
+			"classifier request ID = %q, want job_id %q",
+			requestIDs[0],
+			fixture.command.GetJobId(),
+		)
+	}
+
 	classifierInput := classifierCalls[0]
 
 	wantTimeMJD := []float64{

@@ -91,10 +91,11 @@ func (classifier *VariableStarClassifier) Classify(ctx context.Context, input ap
 	}
 
 	// TODO get request ID from context
+	requestID, _ := application.ClassificationRequestIDFromContext(ctx)
 	request, err := EncodeBinaryInferRequest(
 		classifier.modelName,
 		classifier.modelVersion,
-		"",
+		requestID,
 		tensors,
 		[]string{
 			coarseProbsOutputName,

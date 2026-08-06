@@ -723,3 +723,123 @@ func binaryClassificationResponse(
 		Body: io.NopCloser(bytes.NewReader(body)),
 	}
 }
+
+func TestVariableStarClassifierUsesClassificationRequestID(
+	t *testing.T,
+) {
+	const requestID = "classification-job-0001"
+
+	httpClient := &http.Client{
+		Transport: roundTripFunc(
+			func(
+				request *http.Request,
+			) (*http.Response, error) {
+				body, err := io.ReadAll(request.Body)
+				if err != nil {
+					t.Fatalf(
+						"io.ReadAll() error = %v",
+						err,
+					)
+				}
+
+				headerLength, err := strconv.Atoi(
+					request.Header.Get(
+						InferenceHeaderContentLength,
+					),
+				)
+				if err != nil {
+					t.Fatalf(
+						"parse inference header length: %v",
+						err,
+					)
+				}
+
+				if headerLength <= 0 ||
+					headerLength > len(body) {
+					t.Fatalf(
+						"inference header length = %d, body length = %d",
+						headerLength,
+						len(body),
+					)
+				}
+
+				var header binaryInferRequestHeader
+				if err := json.Unmarshal(
+					body[:headerLength],
+					&header,
+				); err != nil {
+					t.Fatalf(
+						"json.Unmarshal() error = %v",
+						err,
+					)
+				}
+
+				if header.ID != requestID {
+					t.Fatalf(
+						"Triton request id = %q, want %q",
+						header.ID,
+						requestID,
+					)
+				}
+
+				return successfulClassificationResponse(
+					t,
+					true,
+				), nil
+			},
+		),
+	}
+
+	client, err := NewClient(
+		"http://triton.test",
+		httpClient,
+		1024*1024,
+	)
+	if err != nil {
+		t.Fatalf("NewClient() error = %v", err)
+	}
+
+	classifier, err := NewVariableStarClassifier(
+		client,
+		classifierTestEntrypoint(),
+	)
+	if err != nil {
+		t.Fatalf(
+			"NewVariableStarClassifier() error = %v",
+			err,
+		)
+	}
+
+	ctx := application.WithClassificationRequestID(
+		context.Background(),
+		requestID,
+	)
+
+	_, err = classifier.Classify(
+		ctx,
+		application.ClassificationInput{
+			TimeMJD: []float64{
+				60001,
+				60002,
+				60003,
+			},
+			Magnitude: []float32{
+				14.1,
+				14.2,
+				14.3,
+			},
+			MagnitudeError: []float32{
+				0.01,
+				0.02,
+				0.03,
+			},
+			CoarseMode: application.CoarseModeComputeCurrent,
+		},
+	)
+	if err != nil {
+		t.Fatalf(
+			"Classify() error = %v",
+			err,
+		)
+	}
+}

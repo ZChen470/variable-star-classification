@@ -119,13 +119,14 @@ func (handler *ClassificationWorkerHandler) Handle(ctx context.Context, message 
 		return WrapClassificationWorkerError(ClassificationWorkerOperationResolveBundle, err)
 	}
 
-	output, err := handler.classifier.Classify(ctx, prepared.Input)
+	classificationContext := WithClassificationRequestID(ctx, string(command.JobID))
+	output, err := handler.classifier.Classify(classificationContext, prepared.Input)
 	if err != nil {
 		return WrapClassificationWorkerError(ClassificationWorkerOperationClassify, err)
 	}
 
 	// 推理完后，Context 已取消，不再生成或发布 Result
-	if err := ctx.Err(); err != nil {
+	if err := classificationContext.Err(); err != nil {
 		return WrapClassificationWorkerError(ClassificationWorkerOperationClassify, err)
 	}
 

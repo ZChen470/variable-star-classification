@@ -17,9 +17,10 @@ var ErrNilContext = errors.New("context must not be nil")
 type Classifier struct {
 	mu sync.Mutex
 
-	output application.ClassificationOutput
-	err    error
-	calls  []application.ClassificationInput
+	output     application.ClassificationOutput
+	err        error
+	calls      []application.ClassificationInput
+	requestIDs []string
 }
 
 var _ application.VariableStarClassifier = (*Classifier)(nil)
@@ -46,11 +47,23 @@ func (classifier *Classifier) Classify(
 	if err := ctx.Err(); err != nil {
 		return application.ClassificationOutput{}, err
 	}
+	requestID, _ := application.ClassificationRequestIDFromContext(ctx)
 
 	classifier.mu.Lock()
-	classifier.calls = append(classifier.calls, cloneInput(input))
+
+	classifier.calls = append(
+		classifier.calls,
+		cloneInput(input),
+	)
+
+	classifier.requestIDs = append(
+		classifier.requestIDs,
+		requestID,
+	)
+
 	output := classifier.output
 	configuredErr := classifier.err
+
 	classifier.mu.Unlock()
 
 	if err := ctx.Err(); err != nil {
@@ -73,6 +86,17 @@ func (classifier *Classifier) Calls() []application.ClassificationInput {
 		calls[index] = cloneInput(input)
 	}
 	return calls
+}
+
+// RequestIDs 返回每次 Classify 调用接收到的 request ID。
+func (classifier *Classifier) RequestIDs() []string {
+	classifier.mu.Lock()
+	defer classifier.mu.Unlock()
+
+	return append(
+		[]string(nil),
+		classifier.requestIDs...,
+	)
 }
 
 func cloneInput(
