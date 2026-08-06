@@ -42,6 +42,9 @@ const (
 	ClassificationWorkerOperationBuildRun      ClassificationWorkerOperation = "build-run"
 	ClassificationWorkerOperationBuildResult   ClassificationWorkerOperation = "build-result"
 	ClassificationWorkerOperationPublishResult ClassificationWorkerOperation = "publish-result"
+
+	ClassificationWorkerOperationBuildCommandDLQ   ClassificationWorkerOperation = "build-command-dlq"
+	ClassificationWorkerOperationPublishCommandDLQ ClassificationWorkerOperation = "publish-command-dlq"
 )
 
 // ClassificationWorkerErrorCode 是后续 Command DLQ Header 使用的稳定错误代码
@@ -66,6 +69,10 @@ const (
 	ClassificationWorkerErrorCodeDependencyUnavailable ClassificationWorkerErrorCode = "DEPENDENCY_UNAVAILABLE"
 	ClassificationWorkerErrorCodePublishFailed         ClassificationWorkerErrorCode = "RESULT_PUBLISH_FAILED"
 	ClassificationWorkerErrorCodeInternalInvalid       ClassificationWorkerErrorCode = "WORKER_INTERNAL_INVALID"
+
+	ClassificationWorkerErrorCodeCommandDLQInvalid ClassificationWorkerErrorCode = "COMMAND_DLQ_INVALID"
+
+	ClassificationWorkerErrorCodeCommandDLQPublishFailed ClassificationWorkerErrorCode = "COMMAND_DLQ_PUBLISH_FAILED"
 )
 
 // ClassificationWorkerError 保存稳定分类信息，同时通过 Unwrap 保留原始 Cause
@@ -230,6 +237,14 @@ func classifyClassificationWorkerCause(operation ClassificationWorkerOperation, 
 	case ClassificationWorkerOperationPublishResult:
 		return ClassificationWorkerErrorClassRetryable,
 			ClassificationWorkerErrorCodePublishFailed
+
+	case ClassificationWorkerOperationPublishCommandDLQ:
+		return ClassificationWorkerErrorClassRetryable,
+			ClassificationWorkerErrorCodeCommandDLQPublishFailed
+
+	case ClassificationWorkerOperationBuildCommandDLQ:
+		return ClassificationWorkerErrorClassPermanent,
+			ClassificationWorkerErrorCodeCommandDLQInvalid
 
 	default:
 		return ClassificationWorkerErrorClassPermanent,
