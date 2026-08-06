@@ -45,6 +45,8 @@ const (
 
 	ClassificationWorkerOperationBuildCommandDLQ   ClassificationWorkerOperation = "build-command-dlq"
 	ClassificationWorkerOperationPublishCommandDLQ ClassificationWorkerOperation = "publish-command-dlq"
+
+	ClassificationWorkerOperationRetryWait ClassificationWorkerOperation = "retry-wait"
 )
 
 // ClassificationWorkerErrorCode 是后续 Command DLQ Header 使用的稳定错误代码
