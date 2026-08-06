@@ -74,6 +74,15 @@ func (err *HTTPStatusError) Error() string {
 	return fmt.Sprintf("Triton HTTP response status %d", err.StatusCode)
 }
 
+// HTTPStatusCode 允许应用层错误分类器读取稳定 HTTP 状态
+// 而不要求 application 依赖具体 Triton Adapter 类型
+func (err *HTTPStatusError) HTTPStatusCode() int {
+	if err == nil {
+		return 0
+	}
+	return err.StatusCode
+}
+
 // Client 是通用的 Triton v2 HTTP Client
 type Client struct {
 	baseURL         string

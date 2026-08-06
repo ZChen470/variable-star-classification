@@ -3,7 +3,6 @@ package application
 import (
 	"context"
 	"errors"
-	"fmt"
 	"time"
 )
 
@@ -102,7 +101,7 @@ func (handler *ClassificationWorkerHandler) Handle(ctx context.Context, message 
 
 	command, err := DecodeClassificationCommandMessage(handler.commandTopic, message)
 	if err != nil {
-		return fmt.Errorf("decode classification command: %w", err)
+		return WrapClassificationWorkerError(ClassificationWorkerOperationDecodeCommand, err)
 	}
 
 	prepared, err := handler.inputPrepare.Prepare(ctx, ClassificationInputPreparationRequest{
@@ -112,22 +111,22 @@ func (handler *ClassificationWorkerHandler) Handle(ctx context.Context, message 
 		ModelBundleVersion:         command.ModelBundleVersion,
 	})
 	if err != nil {
-		return fmt.Errorf("prepare classification input: %w", err)
+		return WrapClassificationWorkerError(ClassificationWorkerOperationPrepareInput, err)
 	}
 
 	servingBundle, err := handler.servingBundleResolver.ResolveServingBundle(ctx, command.ModelBundleVersion)
 	if err != nil {
-		return fmt.Errorf("resolve serving bundle: %w", err)
+		return WrapClassificationWorkerError(ClassificationWorkerOperationResolveBundle, err)
 	}
 
 	output, err := handler.classifier.Classify(ctx, prepared.Input)
 	if err != nil {
-		return fmt.Errorf("classify variable star: %w", err)
+		return WrapClassificationWorkerError(ClassificationWorkerOperationClassify, err)
 	}
 
 	// 推理完后，Context 已取消，不再生成或发布 Result
 	if err := ctx.Err(); err != nil {
-		return err
+		return WrapClassificationWorkerError(ClassificationWorkerOperationClassify, err)
 	}
 
 	run, err := BuildClassificationRun(
@@ -142,16 +141,16 @@ func (handler *ClassificationWorkerHandler) Handle(ctx context.Context, message 
 		},
 	)
 	if err != nil {
-		return fmt.Errorf("build classification run: %w", err)
+		return WrapClassificationWorkerError(ClassificationWorkerOperationBuildRun, err)
 	}
 
 	resultMessage, err := BuildClassificationResultMessage(handler.resultTopic, run, command.TraceContext, message.Headers)
 	if err != nil {
-		return fmt.Errorf("build classification result message: %w", err)
+		return WrapClassificationWorkerError(ClassificationWorkerOperationBuildResult, err)
 	}
 
 	if err = handler.publisher.Publish(ctx, resultMessage); err != nil {
-		return fmt.Errorf("publish classification result: %w", err)
+		return WrapClassificationWorkerError(ClassificationWorkerOperationPublishResult, err)
 	}
 
 	return nil

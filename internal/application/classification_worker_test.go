@@ -270,6 +270,10 @@ func TestClassificationWorkerHandlerStopsAfterFailure(
 
 		mutateMessage func(*application.InboundMessage)
 
+		wantClass     application.ClassificationWorkerErrorClass
+		wantCode      application.ClassificationWorkerErrorCode
+		wantOperation application.ClassificationWorkerOperation
+
 		wantPermanentCommandError bool
 		wantCause                 error
 
@@ -286,6 +290,18 @@ func TestClassificationWorkerHandlerStopsAfterFailure(
 			) {
 				message.Value = []byte{0xff, 0xff}
 			},
+
+			wantClass: application.
+				ClassificationWorkerErrorClassPermanent,
+
+			wantCode: application.ClassificationWorkerErrorCode(
+				application.
+					ClassificationCommandErrorCodeMalformedProto,
+			),
+
+			wantOperation: application.
+				ClassificationWorkerOperationDecodeCommand,
+
 			wantPermanentCommandError: true,
 		},
 		{
@@ -293,6 +309,16 @@ func TestClassificationWorkerHandlerStopsAfterFailure(
 			options: classificationWorkerFixtureOptions{
 				lightCurveError: errWorkerLightCurve,
 			},
+
+			wantClass: application.
+				ClassificationWorkerErrorClassRetryable,
+
+			wantCode: application.
+				ClassificationWorkerErrorCodeDependencyUnavailable,
+
+			wantOperation: application.
+				ClassificationWorkerOperationPrepareInput,
+
 			wantCause: errWorkerLightCurve,
 
 			wantLightCurveCalls: 1,
@@ -303,6 +329,15 @@ func TestClassificationWorkerHandlerStopsAfterFailure(
 				invalidLightCurve: true,
 			},
 
+			wantClass: application.
+				ClassificationWorkerErrorClassPermanent,
+
+			wantCode: application.
+				ClassificationWorkerErrorCodeLightCurveInvalid,
+
+			wantOperation: application.
+				ClassificationWorkerOperationPrepareInput,
+
 			wantLightCurveCalls: 1,
 		},
 		{
@@ -310,6 +345,16 @@ func TestClassificationWorkerHandlerStopsAfterFailure(
 			options: classificationWorkerFixtureOptions{
 				servingBundleError: errWorkerServingBundle,
 			},
+
+			wantClass: application.
+				ClassificationWorkerErrorClassRetryable,
+
+			wantCode: application.
+				ClassificationWorkerErrorCodeDependencyUnavailable,
+
+			wantOperation: application.
+				ClassificationWorkerOperationResolveBundle,
+
 			wantCause: errWorkerServingBundle,
 
 			wantLightCurveCalls:    1,
@@ -321,6 +366,16 @@ func TestClassificationWorkerHandlerStopsAfterFailure(
 			options: classificationWorkerFixtureOptions{
 				classifierError: errWorkerClassifier,
 			},
+
+			wantClass: application.
+				ClassificationWorkerErrorClassRetryable,
+
+			wantCode: application.
+				ClassificationWorkerErrorCodeDependencyUnavailable,
+
+			wantOperation: application.
+				ClassificationWorkerOperationClassify,
+
 			wantCause: errWorkerClassifier,
 
 			wantLightCurveCalls:    1,
@@ -333,6 +388,16 @@ func TestClassificationWorkerHandlerStopsAfterFailure(
 			options: classificationWorkerFixtureOptions{
 				servingBundleVersion: "different-bundle",
 			},
+
+			wantClass: application.
+				ClassificationWorkerErrorClassPermanent,
+
+			wantCode: application.
+				ClassificationWorkerErrorCodeResultInvalid,
+
+			wantOperation: application.
+				ClassificationWorkerOperationBuildRun,
+
 			wantCause: application.
 				ErrInvalidClassificationRunBuild,
 
@@ -346,6 +411,16 @@ func TestClassificationWorkerHandlerStopsAfterFailure(
 			options: classificationWorkerFixtureOptions{
 				publisherError: errWorkerPublisher,
 			},
+
+			wantClass: application.
+				ClassificationWorkerErrorClassRetryable,
+
+			wantCode: application.
+				ClassificationWorkerErrorCodePublishFailed,
+
+			wantOperation: application.
+				ClassificationWorkerOperationPublishResult,
+
 			wantCause: errWorkerPublisher,
 
 			wantLightCurveCalls:    1,
@@ -364,6 +439,7 @@ func TestClassificationWorkerHandlerStopsAfterFailure(
 			)
 
 			message := fixture.message
+
 			if test.mutateMessage != nil {
 				test.mutateMessage(&message)
 			}
@@ -375,6 +451,41 @@ func TestClassificationWorkerHandlerStopsAfterFailure(
 			if err == nil {
 				t.Fatal(
 					"Handle() error = nil, want non-nil",
+				)
+			}
+
+			var workerError *application.
+				ClassificationWorkerError
+
+			if !errors.As(err, &workerError) {
+				t.Fatalf(
+					"Handle() error = %v, want ClassificationWorkerError",
+					err,
+				)
+			}
+
+			if workerError.Class != test.wantClass {
+				t.Fatalf(
+					"worker error class = %s, want %s",
+					workerError.Class,
+					test.wantClass,
+				)
+			}
+
+			if workerError.Code != test.wantCode {
+				t.Fatalf(
+					"worker error code = %q, want %q",
+					workerError.Code,
+					test.wantCode,
+				)
+			}
+
+			if workerError.Operation !=
+				test.wantOperation {
+				t.Fatalf(
+					"worker error operation = %q, want %q",
+					workerError.Operation,
+					test.wantOperation,
 				)
 			}
 
@@ -435,14 +546,22 @@ func TestClassificationWorkerHandlerStopsAfterFailure(
 			assertWorkerCallCount(
 				t,
 				"classifier",
-				len(fixture.classifier.Calls()),
+				len(
+					fixture.
+						classifier.
+						Calls(),
+				),
 				test.wantClassifierCalls,
 			)
 
 			assertWorkerCallCount(
 				t,
 				"publisher",
-				len(fixture.publisher.Calls()),
+				len(
+					fixture.
+						publisher.
+						Calls(),
+				),
 				test.wantPublisherCalls,
 			)
 		})
