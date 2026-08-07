@@ -2,49 +2,459 @@
 
 变源候选体实时分类系统的 Go 工程仓库。
 
-系统面向地基光学望远镜产生的变源候选体，通过固定光变曲线 revision、版本化模型契约、确定性任务身份和事件驱动流程，形成可追溯、可重放、可扩展的实时分类基础。
+系统面向地基光学望远镜产生的变源候选体，通过固定光变曲线 revision、版本化模型契约、确定性任务身份、Kafka 异步消息和 PostgreSQL 幂等持久化，形成可追溯、可重放、可扩展的实时分类基础。
 
 ## 当前阶段
 
-阶段 1 至阶段 5 的最小工程闭环已经完成，阶段 5 已通过真实 Triton 服务器契约与三种模式推理验收：
+阶段 1 至阶段 6 的工程闭环已经完成：
 
 ```text
 阶段 1：工程仓库、Protobuf、确定性身份、分类器 Port 与基础 CI
 阶段 2：PostgreSQL Classification Repository 与 Kafka 基础设施
-阶段 3：CandidateEvent → ClassificationCommand 最小业务闭环
-阶段 4：固定 revision → 规范化 ClassificationInput 最小输入准备闭环
-阶段 5：Serving Bundle → Triton V2 HTTP → ClassificationOutput（S5-GO-01..08）
+阶段 3：CandidateEvent → ClassificationCommand
+阶段 4：固定 revision → 规范化 ClassificationInput
+阶段 5：Serving Bundle → Triton → ClassificationOutput
+阶段 6：ClassificationCommand → ClassificationResult → ClassificationRun → CurrentClassification
 ```
 
-当前已形成：
+当前运行链路：
 
 ```text
-ClassificationCommand 中的固定 object_id + light_curve_revision
+CandidateEvent
         ↓
-LightCurveRepository
+candidate-orchestrator
         ↓
-LightCurveRevisionReader
+ClassificationCommand
         ↓
-机械合法性校验、复制和时间排序
+classifier-worker
         ↓
-ModelBundleResolver + CoarseModeSelector
+固定 LightCurveRevision HTTP 读取
         ↓
-ClassificationInput Builder
+ClassificationInputPreparer
         ↓
-PreparedClassificationInput
+Triton variable_star_classifier
         ↓
-ServingBundleResolver + manifest-v2 Loader
+ClassificationResult
         ↓
-Triton Metadata / Config / Ready 契约门禁
+classification-result-writer
         ↓
-VariableStarClassifier Adapter
+ClassificationRun
         ↓
-Triton V2 HTTP + Binary Tensor
-        ↓
-ClassificationOutput
+CurrentClassification
 ```
 
-当前覆盖三条粗分类路径：
+阶段 6 已完成自动分类的应用层、Adapter 和运行时装配闭环。
+
+必须区分不同验证层级：
+
+```text
+应用层与 Adapter：VERIFIED_CI
+真实 Triton：VERIFIED_SERVER
+本地真实 PostgreSQL：VERIFIED_LOCAL
+真实 Kafka Broker：DEFERRED
+真实上游 LightCurve 服务联调：DEFERRED
+Kafka + LightCurve + Triton + PostgreSQL 联合 E2E：DEFERRED
+正式科学批准：PENDING_FORMAL_BENCHMARK
+```
+
+下一阶段：
+
+```text
+阶段 7：查询 API、GUI 与人工复核
+```
+
+---
+
+## 当前范围
+
+当前仓库包含：
+
+```text
+Protobuf v1 契约
+
+确定性 job_id / run_id
+
+PostgreSQL:
+  ClassificationRun
+  CurrentClassification
+  幂等保存
+  Current 条件推进
+  兼容历史粗概率查询
+
+Kafka:
+  Publisher
+  ConsumerRunner
+  手动 Offset
+  Candidate DLQ
+  Command DLQ
+  Result DLQ
+
+Candidate:
+  CandidateEvent 解码与校验
+  ClassificationPolicy v1
+  ClassificationCommand 确定性构造
+  CandidateHandler
+  candidate-orchestrator
+
+LightCurve:
+  固定 revision Repository Port
+  Fake Repository
+  真实 HTTP Adapter
+  LightCurveRevisionReader
+  机械合法性校验
+  防御性复制与确定性时间排序
+
+Classification Input:
+  ModelBundleResolver
+  CoarseModeSelector
+  ClassificationInputBuilder
+  ClassificationInputPreparer
+  Golden / deterministic tests
+
+Serving:
+  ServingBundleResolver
+  model-bundle-manifest-v2 Loader
+  Triton V2 HTTP Client
+  Binary Tensor Codec
+  Metadata / Config / Ready 契约门禁
+  VariableStarClassifier Triton Adapter
+
+Stage 6:
+  ClassificationCommand Decoder
+  Classification Worker
+  ClassificationWorkerError
+  有限快速 Retry
+  Command DLQ
+  ClassificationRun 构造
+  ClassificationResult Proto / Kafka 构造
+  job_id → Triton request id
+  ClassificationResult Decoder
+  Classification Result Writer
+  Result DLQ
+  Result → PostgreSQL 分层 E2E
+  classifier-worker composition root
+  classification-result-writer composition root
+```
+
+当前不包含：
+
+- 自动选择 latest LightCurve revision；
+- 自动选择 latest Model Bundle；
+- 持久化 `ClassificationJob`；
+- Go 侧 XGBoost 特征计算；
+- Go 侧 Transformer 标准化、分桶、padding 或 mask；
+- Transactional Outbox；
+- `classification.updated` 领域事件；
+- Retry Topic 或独立延迟调度器；
+- 查询 API；
+- GUI；
+- 人工复核；
+- UNKNOWN / OOD 业务判定；
+- 完整生产可观测性与安全体系；
+- Kubernetes 生产部署。
+
+---
+
+## 环境要求
+
+基础开发环境：
+
+- Go 1.25.0
+- Git
+
+可选工具和基础设施：
+
+- Make：主要供 Linux 和 CI 使用；
+- Buf：检查和生成 Protobuf；
+- `protoc-gen-go`：生成 Go Protobuf；
+- Goose：验证 PostgreSQL migration；
+- PostgreSQL：Repository 和 Result Writer 集成测试；
+- Kafka：真实 Broker 集成测试；
+- Triton Inference Server：真实模型契约与推理验收；
+- LightCurve HTTP Service：生产固定 revision 数据源。
+
+Go Module：
+
+```text
+github.com/ZChen470/variable-star-classification
+```
+
+---
+
+## 项目结构
+
+```text
+api/proto/astro/classification/v1/      Protobuf v1 源文件
+gen/go/astro/classification/v1/         生成的 Go Protobuf
+
+cmd/candidate-orchestrator/              Candidate → Command 入口
+cmd/classifier-worker/                   Command → Result 入口
+cmd/classification-result-writer/        Result → PostgreSQL 入口
+
+internal/domain/                         领域类型与确定性身份
+internal/application/                    应用 Port、用例与 Handler
+
+internal/adapter/kafka/                  Kafka Publisher / ConsumerRunner
+internal/adapter/postgres/               PostgreSQL Classification Repository
+internal/adapter/lightcurve/             LightCurveRevision HTTP Adapter
+internal/adapter/modelbundle/            Serving Bundle Manifest Loader
+internal/adapter/triton/                 Triton V2 HTTP Adapter
+
+internal/testsupport/fakeclassifier/
+internal/testsupport/fakelightcurve/
+internal/testsupport/fakemodelbundle/
+internal/testsupport/fakeservingbundle/
+
+models/bundles/                          Manifest、Serving Contract 与 fixtures
+migrations/                              Goose migrations
+docs/contracts/                          上下游契约
+tests/                                   跨包测试
+```
+
+---
+
+## 本地验证
+
+PowerShell 基础门禁：
+
+```powershell
+& { gofmt -w .; if ($LASTEXITCODE -ne 0) { return }; go test ./... -count=1; if ($LASTEXITCODE -ne 0) { return }; go vet ./...; if ($LASTEXITCODE -ne 0) { return }; go build ./...; if ($LASTEXITCODE -ne 0) { return }; git diff --check; git status --short }
+```
+
+Linux / CI：
+
+```bash
+make ci
+```
+
+GitHub Actions 当前检查：
+
+- Go 格式；
+- Protobuf format / lint / build；
+- Protobuf 生成代码漂移；
+- Go Module 漂移；
+- Goose migration；
+- `go vet`；
+- 全部普通测试；
+- 全部包构建；
+- Git 工作区漂移。
+
+真实外部服务集成测试根据环境显式启用，不强塞入普通 CI。
+
+---
+
+## Protobuf
+
+核心 Proto：
+
+```text
+CandidateEvent
+ClassificationCommand
+ClassificationResult
+```
+
+位置：
+
+```text
+api/proto/astro/classification/v1/
+```
+
+生成代码：
+
+```text
+gen/go/astro/classification/v1/
+```
+
+检查与生成：
+
+```bash
+buf format --exit-code
+buf lint
+buf build
+buf generate
+```
+
+生成的 `.pb.go` 不应手工修改。
+
+阶段 6 已退役不再使用的旧字段通过 Proto `reserved` 保留字段号/名称保护，避免后续误复用。
+
+---
+
+## 确定性任务身份
+
+系统不持久化 `ClassificationJob`。
+
+当前逻辑任务身份由：
+
+```text
+object_id
+light_curve_revision
+model_bundle_version
+execution_mode
+```
+
+唯一确定。
+
+不参与 JobID 的字段包括：
+
+```text
+candidate_revision
+priority
+trace
+时间字段
+```
+
+领域实现：
+
+```text
+internal/domain/identity.go
+```
+
+规则：
+
+```text
+相同 JobIdentity
+→ 相同 job_id
+
+相同 job_id
+→ 相同 run_id
+```
+
+当前使用 UUIDv5。
+
+字符串身份字段原样参与计算，不自动 trim、不转换大小写。
+
+`classifier-worker` 消费 Command 时会重新计算并验证 `job_id`。
+
+`classification-result-writer` 消费 Result 时会重新计算并验证：
+
+```text
+job_id
+run_id
+```
+
+`classification_policy_version` 已从活动契约和任务身份中退役，不再参与 Command、Result、Run 或 JobID。
+
+---
+
+## Candidate → ClassificationCommand
+
+生产入口：
+
+```text
+cmd/candidate-orchestrator/
+```
+
+正常流程：
+
+```text
+CandidateEvent
+→ Decode / Validate
+→ ClassificationPolicy
+→ deterministic job_id
+→ ClassificationCommand
+→ Kafka
+```
+
+当前 `RETRACTED` 不支持分类，作为永久非法 Candidate 消息进入 Candidate DLQ。
+
+Command Kafka Key：
+
+```text
+object_id
+```
+
+Command 中固定：
+
+```text
+object_id
+candidate_revision
+light_curve_revision
+declared_eligible_epoch_count
+model_bundle_version
+execution_mode
+job_id
+trace_context
+```
+
+Worker 不读取 latest revision，也不重新决定 Command 的任务身份。
+
+---
+
+## 固定 LightCurveRevision
+
+生产 Worker 通过真实 HTTP Adapter 精确读取：
+
+```text
+GET /internal/v1/objects/{object_id}/light-curves/{light_curve_revision}
+```
+
+实现：
+
+```text
+internal/adapter/lightcurve/repository.go
+```
+
+禁止：
+
+```text
+latest
+closest revision
+revision fallback
+```
+
+HTTP 错误语义：
+
+```text
+404
+→ ErrLightCurveRevisionNotFound
+→ PERMANENT
+
+409
+→ ErrLightCurveRevisionNotReady
+→ RETRYABLE
+
+422
+→ ErrLightCurveRevisionInconsistent
+→ PERMANENT
+
+429 / 5xx / network
+→ ErrLightCurveSourceUnavailable
+→ RETRYABLE
+```
+
+Adapter：
+
+- 保留上游 epoch 原始顺序；
+- 允许上游增加未知 JSON 字段；
+- 检查请求与响应中的 `object_id` / revision 身份一致性；
+- 不执行科学质量判断；
+- 不执行 epoch 排序；
+- 不执行 `3..1024` 数量范围校验；
+- 不执行有限值或重复时间校验。
+
+上游认证方式当前未被冻结，因此 Adapter 不虚构 Bearer Token、API Key 或 mTLS 契约；需要时由部署配置与 `http.Client.Transport` 扩展。
+
+机械准备由应用层负责：
+
+```text
+LightCurveRevisionReader
+→ 三类 epoch 数一致
+→ 3..1024
+→ finite values
+→ magnitude_error > 0
+→ 复制 Epochs
+→ ObservationTime 升序排序
+→ 重复 ObservationTime 永久拒绝
+```
+
+排序只发生在副本上，Repository 返回对象保持原始顺序。
+
+---
+
+## CoarseMode
+
+当前支持：
 
 ```text
 3 <= n <= 20
@@ -60,279 +470,49 @@ n > 20 且明确不存在兼容历史粗概率
 → Triton 内执行 XGBoost
 ```
 
-阶段 5 已完成：
+只有：
 
 ```text
-S5-GO-01 ServingBundleResolver Port + Fake
-S5-GO-02 model-bundle-manifest-v2 Loader
-S5-GO-03 Triton V2 HTTP Client
-S5-GO-04 Binary Tensor Codec
-S5-GO-05 Metadata / Config / Ready 契约门禁
-S5-GO-06 VariableStarClassifier Adapter
-S5-GO-07 HTTP Fake Server 推理夹具
-S5-GO-08 真实 Triton 契约、三种模式推理与服务器验收
+ErrCompatibleCoarseNotFound
 ```
 
-真实服务器已验证精确 Metadata、Config、Ready、Binary Tensor 推理和 `COMPUTE_CURRENT`、`REUSE_PREVIOUS`、`COMPUTE_BOOTSTRAP` 三种模式。下一开发阶段为阶段 6。
+允许进入 bootstrap。
 
-真实上游 LightCurve HTTP Adapter、真实 Kafka Broker 验证和独立服务器 PostgreSQL 验证仍保持 `DEFERRED`。
+其他历史查询错误保持失败，不得误判成“不存在历史结果”。
 
-## 当前范围
+`classifier-worker` 使用 PostgreSQL `ClassificationRepository` 查询兼容历史粗概率，但 Worker 本身不写数据库。
 
-当前仓库包含：
+---
 
-```text
-Protobuf v1 契约
-确定性 job_id / run_id
-分类器应用 Port 与 Fake
-PostgreSQL Migration 与 Classification Repository
-Kafka Publisher 与 Consumer Runner
-CandidateEvent 解码、校验与 ClassificationPolicy v1
-ClassificationCommand 确定性构造
-Candidate 最小 DLQ
-CandidateHandler
-candidate-orchestrator
-LightCurveRevision 领域类型与 Repository Port
-Fake LightCurveRepository
-固定 revision Reader
-LightCurveRevision 机械准备
-ModelBundleResolver Port 与 Fake
-CoarseModeSelector
-ClassificationInput Builder
-ClassificationInputPreparer
-输入准备 Golden Vector 与确定性测试
-ServingBundleResolver Port 与 Fake
-model-bundle-manifest-v2 类型、加载与精确版本解析
-Triton V2 HTTP Client
-Triton Binary Tensor 编解码
-Triton Metadata / Config / Ready 契约门禁
-VariableStarClassifier Triton Adapter
-HTTP Fake Server 三种模式推理夹具与错误响应测试
-真实 Triton 服务器集成测试
-serving-contract-v1 与规范化 HTTP fixtures
-契约制品 SHA-256 完整性门禁
-```
+## Serving Bundle 与 Triton
 
-当前阶段不包含：
-
-- 真实上游 LightCurve HTTP Adapter；
-- 运行时自动选择 latest revision 或 latest 模型版本；
-- Go 侧 XGBoost 特征计算；
-- Go 侧 Transformer 标准化、分桶、padding 或 mask；
-- 在 Go 仓库中保存 XGBoost、Transformer checkpoint、ONNX 或其他模型制品；
-- 自动重试、熔断、通用推理错误分类与可观测性；
-- 完整 ClassificationResult Worker；
-- ClassificationResult Writer；
-- Transactional Outbox；
-- Retry Topic 和通用 Command DLQ；
-- 查询 API、GUI 和人工复核；
-- Kubernetes 与生产部署。
-
-## 环境要求
-
-基础开发环境：
-
-- Go 1.25.0
-- Git
-
-可选工具和基础设施：
-
-- Make：主要供 Linux 和 CI 使用；
-- Buf：检查和生成 Protobuf；
-- `protoc-gen-go`：生成 Go Protobuf 代码；
-- Goose：验证 PostgreSQL migration；
-- PostgreSQL：执行 Repository 集成测试；
-- Kafka：执行真实 Broker 集成测试；
-- Triton Inference Server：执行阶段 5 真实模型契约与推理验收。
-
-## Go Module
-
-```text
-github.com/ZChen470/variable-star-classification
-```
-
-## 项目结构
-
-```text
-api/proto/astro/classification/v1/      Protobuf v1 源文件
-gen/go/astro/classification/v1/         生成的 Go Protobuf 代码
-cmd/candidate-orchestrator/              Candidate 编排服务入口
-internal/domain/                         领域类型与确定性身份规则
-internal/application/                    应用 Port、业务用例、输入准备与 Serving Contract
-internal/adapter/postgres/               PostgreSQL Repository
-internal/adapter/kafka/                  Kafka Publisher 与 Consumer Runner
-internal/adapter/modelbundle/            Serving Bundle manifest-v2 Loader
-internal/adapter/triton/                 Triton HTTP、Binary Tensor、契约门禁与分类器 Adapter
-internal/testsupport/fakeclassifier/     Fake Classifier
-internal/testsupport/fakelightcurve/     Fake LightCurveRepository
-internal/testsupport/fakemodelbundle/    Fake ModelBundleResolver
-internal/testsupport/fakeservingbundle/  Fake ServingBundleResolver
-models/bundles/                          Manifest、Serving Contract 与 HTTP fixtures
-migrations/                              Goose SQL migration
-tests/                                   跨包测试
-docs/contracts/                          上下游契约文档
-```
-
-## 本地验证
-
-PowerShell 一次性执行基础 Go 门禁：
-
-```powershell
-& { gofmt -w .;if ($LASTEXITCODE -ne 0) { return };go test ./... -count=1;if ($LASTEXITCODE -ne 0) { return };go vet ./...;if ($LASTEXITCODE -ne 0) { return };go build ./...;if ($LASTEXITCODE -ne 0) { return };git diff --check;git status --short }
-```
-
-安装 Make 的 Linux 或 CI 环境可以执行：
-
-```bash
-make ci
-```
-
-CI 当前使用 Go 1.25.0，并检查：
-
-- Go 格式；
-- Protobuf 格式、lint 和 build；
-- Protobuf 生成代码漂移；
-- Go Module 依赖漂移；
-- Goose migration；
-- `go vet`；
-- 全部测试；
-- 全部包构建；
-- 最终 Git 工作区漂移。
-
-## Protobuf
-
-Proto 源文件位于：
-
-```text
-api/proto/astro/classification/v1/
-```
-
-当前核心消息包括：
-
-```text
-CandidateEvent
-ClassificationCommand
-ClassificationResult
-```
-
-检查和重新生成：
-
-```bash
-buf format --exit-code
-buf lint
-buf build
-buf generate
-```
-
-生成代码位于：
-
-```text
-gen/go/astro/classification/v1/
-```
-
-生成的 `.pb.go` 文件不应直接手工修改。契约变化应先修改 `.proto`，再重新生成。
-
-## 确定性任务身份
-
-系统当前不持久化 `ClassificationJob`。
-
-一个逻辑分类任务由以下字段唯一确定：
-
-- `object_id`
-- `light_curve_revision`
-- `model_bundle_version`
-- `classification_policy_version`
-- `execution_mode`
-
-领域代码位于：
-
-```text
-internal/domain/identity.go
-```
-
-相同任务输入始终生成相同 `job_id`；一个 `job_id` 始终生成相同成功结果 `run_id`。这为 Kafka 至少一次投递下的幂等处理提供稳定身份。
-
-当前算法使用 UUIDv5。字符串按 UTF-8 原样参与计算，不自动去除空白或转换大小写。
-
-## 分类器应用边界
-
-应用层通过以下接口调用分类器：
-
-```text
-internal/application.VariableStarClassifier
-```
-
-稳定输入输出类型位于：
-
-```text
-internal/application/classifier.go
-```
-
-`ClassificationInput` 包含：
-
-```text
-TimeMJD
-Magnitude
-MagnitudeError
-CoarseMode
-ReusedCoarseProbabilities（可选）
-```
-
-模型输出维度固定为：
-
-- 7 个粗类别概率；
-- 10 个条件细类别概率；
-- 12 个最终叶子类别概率。
-
-应用接口不依赖 Protobuf、Kafka、PostgreSQL 或 Triton 类型。
-
-测试替身位于：
-
-```text
-internal/testsupport/fakeclassifier/
-```
-
-## Triton Serving Bundle 与推理 Adapter
-
-### Serving Bundle 边界
-
-阶段 5 使用独立于阶段 4 `ModelBundleResolver` 的完整 Serving Resolver：
+Serving Bundle 解析：
 
 ```text
 internal/application/serving_bundle_resolver.go
-internal/testsupport/fakeservingbundle/
+internal/adapter/modelbundle/
 ```
 
-`ServingBundleResolver` 根据 Command 已绑定的 `model_bundle_version` 解析固定 Bundle 身份及入口元数据：
+运行时只使用精确：
 
 ```text
-模型 Bundle 与科学契约版本
-精确 model_name / model_version
-backend / protocol / max_batch_size
-输入输出 Tensor 契约
-7 / 10 / 12 维概率类别顺序
+model_bundle_version
+model_name
+model_version
 ```
 
-解析规则保持精确版本语义：
+禁止自动选择 latest 或版本 fallback。
 
-- 不选择 latest；
-- 不 trim；
-- 不转换大小写；
-- 不改写请求版本；
-- 部署地址不进入 Bundle，由运行环境提供。
-
-文件加载器位于：
+`classifier-worker` 每个进程只加载一次不可变 `FileServingBundleResolver`。同一个 Resolver：
 
 ```text
-internal/adapter/modelbundle/serving_manifest.go
-models/bundles/model-bundle-manifest-v2.yaml
+├── 作为 Worker 的 ServingBundleResolver
+└── 投影为阶段 4 所需的最小 ModelBundleResolver
 ```
 
-当前加载器使用严格 YAML 字段解析，拒绝多文档，并校验 v2 schema、manifest 状态、Bundle 身份、统一入口模型名和 Python backend。真实运行时契约由 Triton 启动门禁继续验证。
+因此运行时 Bundle 身份由同一份 Manifest 统一提供，不增加每条消息的重复绑定校验。
 
-### 统一 Triton 入口
-
-第一版统一入口固定为：
+统一 Triton 入口：
 
 ```text
 model_name: variable_star_classifier
@@ -342,7 +522,7 @@ max_batch_size: 0
 binary_tensor_data: true
 ```
 
-Go → Triton 输入：
+Go → Triton：
 
 ```text
 TIME_MJD                 FP64  [N]
@@ -352,7 +532,7 @@ COARSE_MODE              INT32 [1]
 REUSED_COARSE_PROBS      FP32  [7]
 ```
 
-Triton → Go 输出：
+Triton → Go：
 
 ```text
 COARSE_PROBS             FP32 [7]
@@ -361,467 +541,363 @@ LEAF_PROBS               FP32 [12]
 XGBOOST_EXECUTED         BOOL [1]
 ```
 
-`REUSED_COARSE_PROBS` 始终存在：
-
-- `REUSE_PREVIOUS` 发送七维历史粗概率；
-- `COMPUTE_CURRENT` 和 `COMPUTE_BOOTSTRAP` 发送七维全零占位；
-- 不使用 optional Tensor。
-
-概率数组顺序由 Serving Bundle 契约固定。Go Adapter 不根据模型内部实现推断类别，也不对输出做隐藏重排。
-
-### Triton V2 HTTP 与 Binary Tensor
-
-HTTP Client 和 Binary Tensor Codec 位于：
-
-```text
-internal/adapter/triton/client.go
-internal/adapter/triton/binary_tensor.go
-```
-
-精确版本端点：
-
-```text
-GET  /v2/models/{model_name}/versions/{model_version}
-GET  /v2/models/{model_name}/versions/{model_version}/config
-GET  /v2/models/{model_name}/versions/{model_version}/ready
-POST /v2/models/{model_name}/versions/{model_version}/infer
-```
-
-推理请求使用：
-
-```text
-Content-Type: application/octet-stream
-Inference-Header-Content-Length: <JSON header bytes>
-Body: JSON header + little-endian tensor bytes
-```
-
-Codec 支持当前契约使用的 `FP64`、`FP32`、`INT32` 和 `BOOL`，校验 shape、元素字节数、重复 Tensor、响应边界和尾随字节。响应按 JSON `outputs` 中的实际顺序切分二进制区；业务 Adapter 再按输出名称映射，不依赖服务端返回顺序。
-
-HTTP Client：
-
-- 使用调用方传入的 Context；
-- 使用注入的 `http.Client`；
-- 限制最大响应体；
-- 保留非 2xx 状态码、响应 Header 和 Body；
-- 当前不内置重试策略。
-
-### 启动契约门禁
-
-契约门禁位于：
-
-```text
-internal/adapter/triton/contract_gate.go
-```
-
-启动时检查精确版本的：
+启动时执行精确版本：
 
 ```text
 Ready
-Model Metadata
-Model Config
+Metadata
+Config
 ```
 
-当前校验包括：
+契约门禁。
 
-- 精确模型名称和版本；
-- Python backend；
-- `max_batch_size = 0`；
-- 五个输入和四个输出；
-- Tensor 名称、顺序、datatype 和 dims；
-- 输入 optional/required 语义。
-
-这些检查已经通过单元测试、CI 和真实 Triton `2.67.0` 服务器验收；运行时必须使用精确模型版本，不回退到 latest。
-
-### VariableStarClassifier Adapter
-
-生产 Adapter 位于：
+`job_id` 会通过 Context 传给 Triton inference request：
 
 ```text
-internal/adapter/triton/classifier.go
+Triton request.id = ClassificationCommand.job_id
 ```
 
-职责：
+同一 Command 快速重试仍使用相同 request id。
+
+---
+
+## ClassificationRun 与 ClassificationResult
+
+成功推理结果先构造：
 
 ```text
-ClassificationInput
-→ 五个 Binary Tensor
-→ 精确版本 Triton infer
-→ 解码四个输出
-→ ClassificationOutput
+domain.ClassificationRun
 ```
 
-应用层已经负责 epoch 数量、序列一致性、有限值、误差正值、时间排序和重复时间拒绝。Triton Adapter 不重复这些机械校验，只检查影响 Wire Mapping 的模式组合：
-
-- `REUSE_PREVIOUS` 必须携带历史粗概率；
-- `COMPUTE_CURRENT` 和 `COMPUTE_BOOTSTRAP` 不得携带历史粗概率；
-- 未知模式拒绝；
-- `XGBOOST_EXECUTED` 必须与模式一致。
-
-### HTTP 推理夹具
-
-HTTP Fake Server 测试位于：
+然后映射为：
 
 ```text
-internal/adapter/triton/classifier_http_fixture_test.go
+ClassificationResult Proto
+→ Kafka OutboundMessage
 ```
 
-已经覆盖：
+`run_id` 由 `job_id` 确定性生成。
 
-- `COMPUTE_CURRENT`；
-- `REUSE_PREVIOUS`；
-- `COMPUTE_BOOTSTRAP`；
-- 真实 Go HTTP 请求链路；
-- Binary Tensor JSON Header 与二进制 Body；
-- 服务端输出乱序；
-- Triton 400 与 503 响应传播；
-- 缺失 Header 长度和截断二进制响应拒绝。
-
-这些夹具验证 Go 侧协议与映射，不单独代表真实模型科学结果或服务器环境验收。
-
-### 真实 Triton 服务器验证
-
-真实服务器集成测试位于：
-
-```text
-internal/adapter/triton/server_integration_test.go
-```
-
-默认测试会跳过真实服务器，通过以下环境变量显式启用：
-
-```powershell
-$env:VSC_TRITON_INTEGRATION='1'; $env:VSC_TRITON_BASE_URL='<triton-base-url>'; go test ./internal/adapter/triton -run '^TestTritonServerIntegration$' -count=1 -v
-```
-
-服务器验收已经覆盖：
-
-- 精确 `variable_star_classifier:1` Metadata、Config 和深度 Ready；
-- `COMPUTE_CURRENT`、`REUSE_PREVIOUS` 和 `COMPUTE_BOOTSTRAP`；
-- 7/10/12 概率输出及 `XGBOOST_EXECUTED`；
-- 输入反序等价性与重复时间拒绝；
-- GPU FP32 数值容差和重复推理确定性。
-
-生产地址属于部署配置，不写入 Bundle 或 README。Go 仓库只保存 Serving Contract、规范化 HTTP fixtures 及其 SHA-256。
-
-## 固定 LightCurveRevision 输入准备
-
-### 上游读取边界
-
-应用 Port 位于：
-
-```text
-internal/application/light_curve_repository.go
-```
-
-领域类型位于：
-
-```text
-internal/domain/light_curve.go
-```
-
-逻辑读取接口为：
-
-```go
-type LightCurveRepository interface {
-    GetRevision(
-        ctx context.Context,
-        objectID string,
-        revision int64,
-    ) (domain.LightCurveRevision, error)
-}
-```
-
-冻结的目标上游接口为：
-
-```text
-GET /internal/v1/objects/{object_id}/light-curves/{light_curve_revision}
-```
-
-生产分类必须读取 Command 指定的固定 revision，禁止默认读取 latest。
-
-阶段 4 只实现 Port、Fake 和读取用例。真实 HTTP Adapter 保持 `DEFERRED`。
-
-### LightCurveRevision 最小字段
+Result Kafka Key：
 
 ```text
 object_id
-revision
-eligible_epoch_count
-quality_policy_version（可选）
-epochs:
-  observation_time
-  magnitude
-  magnitude_error
 ```
 
-上游负责科学质量过滤。分类侧不重新判断饱和、坏像元、背景异常或仪器级质量标记，只执行机械合法性校验。
-
-### 固定 revision Reader
-
-读取用例位于：
+Result Kafka Timestamp：
 
 ```text
-internal/application/light_curve_reader.go
+completed_at
 ```
 
-Reader 负责：
+Result Proto 和 Kafka Headers 传播 trace / 消息上下文。
 
-- 原样传递 `object_id` 和 `revision`；
-- 传播 Context 与 Repository 错误；
-- 拒绝返回身份不匹配；
-- 返回 Repository 已隔离的数据。
+阶段 6 不采集推理耗时，因此旧 timing 字段已退役，不填充虚构耗时。
 
-Reader 不进行排序、机械校验、模式选择或模型输入构造。
-
-### 机械准备
-
-机械准备位于：
-
-```text
-internal/application/light_curve_preparer.go
-```
-
-处理顺序：
-
-```text
-三类 epoch 计数一致性
-        ↓
-实际 epoch 数范围 3..1024
-        ↓
-数值有限性
-        ↓
-magnitude_error > 0
-        ↓
-复制 Epochs
-        ↓
-仅按 ObservationTime 升序排序
-        ↓
-拒绝任何重复 ObservationTime
-```
-
-三类计数必须一致：
-
-```text
-ClassificationCommand.declared_eligible_epoch_count
-LightCurveRevision.EligibleEpochCount
-len(LightCurveRevision.Epochs)
-```
-
-规则：
-
-- `ObservationTime` 必须为有限值；
-- `Magnitude` 必须为有限值；
-- `MagnitudeError` 必须为有限值且大于零；
-- epoch 数必须位于 `3..1024`；
-- 不截断、不补齐、不去重；
-- 只按 `ObservationTime` 升序排序；
-- 任意两个 epoch 的 `ObservationTime` 完全相同，则永久拒绝整个 revision；
-- 排序前复制 `Epochs`，不修改 Repository 返回的底层数组。
-
-## Model Bundle 最小解析边界
-
-应用 Port 位于：
-
-```text
-internal/application/model_bundle_resolver.go
-```
-
-阶段 4 只解析选择历史粗概率所需的最小元数据：
+当前活动 Result/Run 版本身份只保留：
 
 ```text
 model_bundle_version
-taxonomy_version
+```
+
+不再单独携带：
+
+```text
+classification_policy_version
 xgboost_model_version
+transformer_model_version
 feature_schema_version
 ```
 
-测试替身位于：
+这些内部模型组成由不可变 Bundle Manifest 管理，不作为 Result/Run 的独立活动身份。
+
+---
+
+## Predicted Class
+
+当前：
 
 ```text
-internal/testsupport/fakemodelbundle/
+predicted_coarse_class = argmax(coarse_probabilities)
+predicted_leaf_class   = argmax(leaf_probabilities)
 ```
 
-Resolver 必须精确解析 Command 已绑定的版本：
-
-- 不自动选择 latest；
-- 不 trim；
-- 不转换大小写；
-- 返回的 `model_bundle_version` 必须与请求一致。
-
-阶段 5 已新增独立 `ServingBundleResolver`、manifest-v2 Loader 和 Triton 入口契约门禁；阶段 4 的最小 `ModelBundleResolver` 保持不变。Serving Contract、HTTP fixtures 与运行时制品摘要已经冻结并通过服务器验证，模型权重仍由外部 Triton 模型仓库管理。
-
-## 粗分类模式选择
-
-模式选择位于：
+并列最大值时：
 
 ```text
-internal/application/coarse_mode_selector.go
+选择最小数组索引
 ```
 
-选择规则：
+类别映射使用显式稳定 Enum ID，不依赖 Enum 数值恰好等于数组索引。
+
+阶段 6 不增加第二套 Probability Validator。
+
+概率范围、概率和、融合公式以及 REUSE 概率一致性继续由阶段 5 Serving Contract、服务端和 Triton Adapter 边界负责。
+
+Result Writer 只重新检查 predicted class 与确定性 argmax 一致，不重新实现模型科学验证。
+
+---
+
+## Classification Worker
+
+生产入口：
 
 ```text
-3 <= actual_epoch_count <= 20
-→ COMPUTE_CURRENT
-→ 不查询历史粗分类结果
-
-actual_epoch_count > 20
-→ FindLatestCompatibleCoarse
+cmd/classifier-worker/
 ```
 
-历史查询结果：
+处理链：
 
 ```text
-找到兼容结果
-→ REUSE_PREVIOUS
-
-仅 errors.Is(err, ErrCompatibleCoarseNotFound)
-→ COMPUTE_BOOTSTRAP
-
-其他查询错误
-→ 原样传播
-→ 禁止误判为未找到
-→ 禁止 bootstrap
+ClassificationCommand
+→ Decode + deterministic JobID check
+→ fixed LightCurveRevision HTTP read
+→ ClassificationInputPreparer
+→ ServingBundleResolver
+→ Triton Classify
+→ ClassificationRun
+→ ClassificationResult
+→ Kafka Result publish
 ```
 
-历史粗结果必须满足：
+Worker：
 
-- `SourceRunID` 非空；
-- 来源 revision 大于零；
-- 来源 revision 严格小于目标 revision；
-- 来源 epoch 数位于 `3..1024`。
+- 不写 ClassificationRun 数据库；
+- 不提交 Kafka Offset；
+- 不读取 latest；
+- 不填充虚构 timing；
+- 只有完整成功结果才发布 ClassificationResult。
 
-兼容查询要求：
-
-- object 相同；
-- `xgboost_executed = true`；
-- `taxonomy_version` 相同；
-- `xgboost_model_version` 相同；
-- `feature_schema_version` 相同；
-- 来源 revision 严格小于目标 revision。
-
-`execution_mode` 不参与粗分类兼容判断。
-
-## ClassificationInput 构造与闭环
-
-输入 Builder 位于：
+Command 处理装饰链：
 
 ```text
-internal/application/classification_input_builder.go
+CommandDLQHandler
+    ↓
+CommandRetryHandler
+    ↓
+ClassificationWorkerHandler
 ```
 
-它只负责：
-
-- 保持 prepared revision 当前顺序；
-- 复制 `TimeMJD`；
-- 复制 `Magnitude`；
-- 复制 `MagnitudeError`；
-- 设置 `CoarseMode`；
-- 仅在 `REUSE_PREVIOUS` 时复制七维历史粗概率。
-
-Builder 不重新排序、不重复机械校验、不访问 Repository、不调用分类器。
-
-闭环用例位于：
+即：
 
 ```text
-internal/application/classification_input_preparer.go
+DLQ(Retry(Worker))
 ```
 
-编排顺序：
+这个顺序保证 Command DLQ 发布失败不会重新执行整个 Worker。
+
+---
+
+## Worker 错误与有限快速重试
+
+Worker 使用结构化：
 
 ```text
-ReadRevision
-→ PrepareLightCurveRevision
-→ CoarseModeSelector.Select
-→ BuildClassificationInput
+ClassificationWorkerError
+  Code
+  Class
+  Operation
+  Cause
 ```
 
-任一步失败后不继续调用后续依赖。例如：
-
-- Repository 读取失败时不解析 Model Bundle；
-- 机械合法性失败时不解析 Model Bundle；
-- 机械合法性失败时不查询历史粗概率；
-- 历史查询故障时不构造分类输入。
-
-返回类型：
+Class：
 
 ```text
-PreparedClassificationInput
-  Revision
-  Selection
-  Input
+RETRYABLE
+PERMANENT
+CANCELLED
 ```
 
-其中：
+保留 `errors.Is / errors.As` Cause 链，不依赖错误全文进行业务分类。
 
-- `Revision` 保存规范化后的固定 revision；
-- `Selection` 保存模式和粗概率来源追溯；
-- `Input` 供后续 `VariableStarClassifier` 使用。
-
-## Golden Vector 与确定性
-
-Golden 测试位于：
+当前默认快速重试：
 
 ```text
-internal/application/classification_input_preparer_golden_test.go
+首次执行
+→ RETRYABLE
+→ 等待 100 ms
+→ 第 2 次执行
+→ RETRYABLE
+→ 等待 300 ms
+→ 第 3 次执行
 ```
 
-覆盖：
+只重试 `RETRYABLE`。
+
+不重试：
 
 ```text
-COMPUTE_CURRENT
-REUSE_PREVIOUS
-COMPUTE_BOOTSTRAP
+PERMANENT
+CANCELLED
+非结构化错误
 ```
 
-验收内容：
+等待期间 Context 取消返回结构化 `CANCELLED`。
 
-- 相同固定输入重复执行得到完全相同结果；
-- 修改前一次返回结果不会影响后续执行；
-- 同一组 epoch 的不同输入排列得到相同规范化输入；
-- Fake Repository 的固定响应不被调用方修改；
-- `Revision`、`Selection` 与 `ClassificationInput` 的可变数据互不共享。
+重试耗尽返回最后一个 `RETRYABLE`。
 
-这些测试冻结的是阶段 4 的结构和确定性。阶段 5 已补充 Tensor Wire Mapping、HTTP fixtures 和真实 Triton 参考输出验证；正式 science-benchmark-v1 与科学审批仍保持 `PENDING_FORMAL_BENCHMARK`。
+当前不实现 Retry Topic 或独立延迟调度器。
 
-## PostgreSQL 存储
+---
 
-第一版 migration 位于：
+## Command DLQ
+
+永久 Command 错误：
 
 ```text
-migrations/00001_create_classification_storage.sql
+PERMANENT
+→ 原始 Command 发布到 Command DLQ
+→ DLQ 成功
+→ Handler 返回 nil
+→ ConsumerRunner 提交原 Command offset
 ```
 
-当前创建：
+保留：
+
+```text
+原始 Key
+原始 Value
+原始 Headers
+原始 Kafka Timestamp
+```
+
+追加稳定元数据：
+
+```text
+x-astro-error-code
+x-astro-error-class
+x-astro-error-operation
+x-astro-original-topic
+x-astro-original-partition
+x-astro-original-offset
+```
+
+不把 `Cause.Error()` 文本作为稳定消息契约。
+
+DLQ 发布失败：
+
+```text
+→ RETRYABLE
+→ 不提交原 Command offset
+```
+
+---
+
+## Command Offset 语义
+
+Worker 只有在：
+
+```text
+ClassificationResult Kafka 发布成功
+```
+
+后才返回 `nil`。
+
+因此：
+
+```text
+Result publish success
+→ Handler nil
+→ ConsumerRunner commit Command offset
+
+Result publish failure
+→ RETRYABLE
+→ finite retry
+→ failure remains
+→ Handler error
+→ no offset commit
+```
+
+Result 发布失败不进入 Command DLQ。
+
+---
+
+## Classification Result Writer
+
+生产入口：
+
+```text
+cmd/classification-result-writer/
+```
+
+处理链：
+
+```text
+ClassificationResult
+→ Decode
+→ deterministic job_id / run_id check
+→ ClassificationRun
+→ SaveRunAndMaybeAdvanceCurrent
+```
+
+Result Writer 不信任 Kafka Result，但不会重新实现模型科学验证。
+
+消费边界验证包括：
+
+```text
+Topic
+Key
+Proto
+required fields
+Kafka Key == object_id
+job_id
+run_id
+CoarseSource relationship
+predicted class argmax
+```
+
+不重新检查：
+
+```text
+概率范围
+概率和
+融合公式
+REUSE 概率一致性
+```
+
+Repository 保存结果的正常返回值无论是：
+
+```text
+RunInserted=true,  CurrentAdvanced=true
+RunInserted=true,  CurrentAdvanced=false
+RunInserted=false, CurrentAdvanced=false
+```
+
+都属于成功处理。
+
+重复 Result 因此是幂等成功。
+
+---
+
+## PostgreSQL
+
+Migration：
+
+```text
+migrations/00002_create_classification_storage.sql
+```
+
+当前表：
 
 ```text
 classification_runs
 current_classifications
 ```
 
-当前阶段有意不创建：
+不创建：
 
 ```text
 classification_jobs
-model_bundles
-processed_messages
 outbox_events
-上游测光和候选实体表
-人工复核相关表
 ```
 
-应用 Port：
-
-```text
-internal/application/classification_repository.go
-```
-
-PostgreSQL Adapter：
+Repository：
 
 ```text
 internal/adapter/postgres/classification_repository.go
 ```
 
-当前提供：
+提供：
 
 ```text
 SaveRunAndMaybeAdvanceCurrent
@@ -829,7 +905,15 @@ GetCurrent
 FindLatestCompatibleCoarse
 ```
 
-只有满足以下条件时推进 Current：
+一个事务内：
+
+```text
+插入不可变 ClassificationRun
++
+必要时推进 CurrentClassification
+```
+
+Current 推进条件：
 
 ```text
 execution_mode == PRODUCTION
@@ -837,80 +921,393 @@ execution_mode == PRODUCTION
 new.light_curve_revision > current.light_curve_revision
 ```
 
-因此旧 revision、相同 revision 的其他 bundle、SHADOW 和 REPROCESS 均不会覆盖当前生产分类。
+因此：
 
-### PostgreSQL 集成测试
+- 第一个 Production Run 可以建立 Current；
+- 更高 revision Production Run 可以推进；
+- 旧 revision 不推进；
+- 相同 revision 的其他 Bundle 不推进；
+- SHADOW 不推进；
+- REPROCESS 不推进。
 
-通过环境变量启用：
+相同 Result 重放属于幂等成功。
 
-```text
-TEST_POSTGRES_DSN
-```
+Repository 身份冲突属于永久 Result 错误，由 Result DLQ 处置。
 
-PowerShell 示例：
+---
 
-```powershell
-& { $env:TEST_POSTGRES_DSN = "postgres://<user>:<password>@127.0.0.1:5432/<test-database>?sslmode=disable";go test ./internal/adapter/postgres -run TestClassificationRepositoryIntegration -count=1 -v;Remove-Item Env:TEST_POSTGRES_DSN -ErrorAction SilentlyContinue }
-```
+## Result DLQ 与 Offset
 
-未设置变量时，普通测试和 CI 跳过真实 PostgreSQL 集成测试。
-
-## Kafka Adapter 与 Candidate Orchestrator
-
-应用消息 Port：
+永久无效 Result 或 Repository 身份冲突：
 
 ```text
-internal/application/messaging.go
+→ Result DLQ
+→ DLQ 成功
+→ Handler 返回 nil
+→ 提交原 Result offset
 ```
 
-Kafka Adapter：
+Result DLQ 保留：
 
 ```text
-internal/adapter/kafka/
+原始 Key
+原始 Value
+原始 Headers
+原始 Kafka Timestamp
 ```
 
-当前提供：
+追加：
 
 ```text
-Publisher
-ConsumerRunner
+x-astro-error-code
+x-astro-error-class
+x-astro-error-field
+x-astro-original-topic
+x-astro-original-partition
+x-astro-original-offset
 ```
 
-Publisher 只要求 Topic 非空，并保持原始 Key、Value 和 Headers 语义。
+数据库临时错误：
 
-Consumer Runner 使用：
+```text
+→ 不进 Result DLQ
+→ Handler error
+→ 不提交 Result offset
+```
+
+Result DLQ 发布失败：
+
+```text
+→ Handler error
+→ 不提交 Result offset
+```
+
+Context 取消同样不提交 offset。
+
+阶段 6 不为 Result Writer 增加独立快速重试层。
+
+---
+
+## Runtime Composition
+
+当前三个可执行服务：
+
+```text
+cmd/candidate-orchestrator/
+cmd/classifier-worker/
+cmd/classification-result-writer/
+```
+
+运行结构：
+
+```text
+candidate-orchestrator
+        ↓
+classifier-worker
+        ↓
+classification-result-writer
+        ↓
+PostgreSQL
+```
+
+### classifier-worker
+
+主要运行依赖：
+
+```text
+Kafka
+LightCurve HTTP Service
+PostgreSQL
+Serving Bundle Manifest
+Triton
+```
+
+主要环境变量：
+
+```text
+KAFKA_BROKERS
+KAFKA_CONSUMER_GROUP
+KAFKA_CLIENT_ID
+
+CLASSIFICATION_COMMAND_TOPIC
+CLASSIFICATION_RESULT_TOPIC
+CLASSIFICATION_COMMAND_DLQ_TOPIC
+
+MODEL_BUNDLE_VERSION
+MODEL_BUNDLE_MANIFEST_PATH
+
+TRITON_BASE_URL
+LIGHT_CURVE_BASE_URL
+POSTGRES_DSN
+```
+
+`KAFKA_CLIENT_ID` 可选；其他变量为运行所需配置。
+
+启动过程：
+
+```text
+配置校验
+→ Serving Manifest 加载
+→ 精确 Bundle 解析
+→ LightCurve HTTP Repository
+→ PostgreSQL
+→ ClassificationInputPreparer
+→ Triton Client
+→ Ready / Metadata / Config Gate
+→ VariableStarClassifier
+→ Kafka
+→ DLQ(Retry(Worker))
+→ ConsumerRunner
+```
+
+当前 HTTP timeout：
+
+```text
+LightCurve: 10 s
+Triton:     10 s
+```
+
+Triton 单响应最大读取：
+
+```text
+1 MiB
+```
+
+### classification-result-writer
+
+主要依赖：
+
+```text
+Kafka
+PostgreSQL
+```
+
+主要环境变量：
+
+```text
+KAFKA_BROKERS
+KAFKA_CONSUMER_GROUP
+KAFKA_CLIENT_ID
+
+CLASSIFICATION_RESULT_TOPIC
+CLASSIFICATION_RESULT_DLQ_TOPIC
+
+POSTGRES_DSN
+```
+
+运行链：
+
+```text
+Kafka Result Consumer
+→ ClassificationResultWriterHandler
+→ PostgreSQL
+→ Result DLQ Handler
+→ ConsumerRunner
+```
+
+两个进程都使用：
 
 ```text
 DisableAutoCommit
 BlockRebalanceOnPoll
+CloseAllowingRebalance
 ```
 
-只有 Handler 成功后才提交 Offset。
+只有 Handler 返回 `nil` 时 ConsumerRunner 才提交对应消息 offset。
 
-Candidate Orchestrator 位于：
+---
 
-```text
-cmd/candidate-orchestrator/
-```
+## 运行入口
 
-它消费 CandidateEvent，执行解码、Policy、Command 构造与发布；永久非法消息进入最小 Candidate DLQ。
+### classifier-worker
 
-### Kafka Broker 集成测试
-
-通过以下变量启用：
-
-```text
-TEST_KAFKA_BROKERS
-TEST_KAFKA_TOPIC
-```
-
-PowerShell 示例：
+示例 PowerShell 环境变量：
 
 ```powershell
-& { $env:TEST_KAFKA_BROKERS = "<broker-host>:9092";$env:TEST_KAFKA_TOPIC = "<dedicated-test-topic>";go test ./internal/adapter/kafka -run TestKafkaPublisherConsumerIntegration -count=1 -v;Remove-Item Env:TEST_KAFKA_BROKERS -ErrorAction SilentlyContinue;Remove-Item Env:TEST_KAFKA_TOPIC -ErrorAction SilentlyContinue }
+$env:KAFKA_BROKERS="localhost:9092"
+$env:KAFKA_CONSUMER_GROUP="variable-star-classifier-worker"
+$env:CLASSIFICATION_COMMAND_TOPIC="astro.classification.commands.v1"
+$env:CLASSIFICATION_RESULT_TOPIC="astro.classification.results.v1"
+$env:CLASSIFICATION_COMMAND_DLQ_TOPIC="astro.classification.commands.dlq.v1"
+$env:MODEL_BUNDLE_VERSION="bundle-v1"
+$env:MODEL_BUNDLE_MANIFEST_PATH=".\models\bundles\model-bundle-manifest-v2.yaml"
+$env:TRITON_BASE_URL="http://localhost:8000"
+$env:LIGHT_CURVE_BASE_URL="http://localhost:8080"
+$env:POSTGRES_DSN="postgres://..."
+go run ./cmd/classifier-worker
 ```
 
-真实 Broker 实际执行仍为 `DEFERRED`。
+### classification-result-writer
+
+```powershell
+$env:KAFKA_BROKERS="localhost:9092"
+$env:KAFKA_CONSUMER_GROUP="variable-star-classification-result-writer"
+$env:CLASSIFICATION_RESULT_TOPIC="astro.classification.results.v1"
+$env:CLASSIFICATION_RESULT_DLQ_TOPIC="astro.classification.results.dlq.v1"
+$env:POSTGRES_DSN="postgres://..."
+go run ./cmd/classification-result-writer
+```
+
+以上仅展示配置形态，不代表仓库已经完成真实外部环境联合 E2E。
+
+---
+
+## 分层验收
+
+### 应用层 Command → Run E2E
+
+```text
+ClassificationCommand
+→ InputPreparer
+→ Classifier
+→ ClassificationResult
+→ Result Writer
+→ ClassificationRun
+```
+
+状态：
+
+```text
+VERIFIED_CI
+```
+
+覆盖：
+
+- 确定性 JobID；
+- 确定性 RunID；
+- 固定 revision；
+- Model Bundle；
+- CoarseSource；
+- 7 / 10 / 12 概率映射；
+- predicted class；
+- completed_at；
+- `job_id → Triton request id`。
+
+该测试使用 Fake 依赖，不替代真实外部环境 E2E。
+
+### LightCurve HTTP 分层测试
+
+```text
+HTTP JSON
+→ LightCurveRepository
+→ LightCurveRevisionReader
+→ PrepareLightCurveRevision
+```
+
+状态：
+
+```text
+VERIFIED_CI
+```
+
+覆盖：
+
+- 固定 URL path；
+- 响应身份；
+- 上游顺序保留；
+-应用层副本排序；
+- `404 → PERMANENT / NotFound`；
+- `409 → RETRYABLE / NotReady`；
+- `422 → PERMANENT / Inconsistent`；
+- `503 → RETRYABLE / SourceUnavailable`。
+
+使用 HTTP Fake Server，不等于真实上游 LightCurve 服务联调。
+
+### PostgreSQL Writer E2E
+
+```text
+ClassificationResult
+→ Decoder
+→ Writer
+→ PostgreSQL
+→ ClassificationRun / CurrentClassification
+```
+
+真实本地 PostgreSQL：
+
+```text
+VERIFIED_LOCAL
+```
+
+测试代码与普通工程门禁：
+
+```text
+VERIFIED_CI
+```
+
+覆盖：
+
+- 幂等 Result 重放；
+- Current 严格按更高 revision 推进；
+- 旧 revision 不覆盖；
+- 同 revision 不覆盖；
+- SHADOW / REPROCESS 不推进；
+- REUSED_PREVIOUS 来源 Run 关系。
+
+### Triton
+
+真实 Triton：
+
+```text
+VERIFIED_SERVER
+```
+
+覆盖：
+
+```text
+Ready
+Metadata
+Config
+COMPUTE_CURRENT
+REUSE_PREVIOUS
+COMPUTE_BOOTSTRAP
+Binary Tensor
+```
+
+### 尚未执行的联合外部环境 E2E
+
+```text
+真实 Kafka Broker：DEFERRED
+真实上游 LightCurve HTTP 服务：DEFERRED
+独立服务器 PostgreSQL：DEFERRED
+
+Kafka + LightCurve + Triton + PostgreSQL 全链路：
+DEFERRED
+```
+
+不得把应用层 Fake、HTTP Fake 或本地单依赖测试描述成真实外部环境全链路验收。
+
+---
+
+## Transactional Outbox
+
+阶段 6 不实现：
+
+```text
+classification.updated
+outbox_events
+Transactional Outbox Publisher
+```
+
+并且禁止：
+
+```text
+PostgreSQL commit
+→ 直接 Kafka publish classification.updated
+```
+
+因为这会产生数据库提交成功、Kafka 事件丢失的双写窗口。
+
+当前状态：
+
+```text
+classification.updated：DEFERRED
+Transactional Outbox：DEFERRED
+```
+
+后续确实出现下游领域事件需求时，再以独立事务 Outbox 设计实现。
+
+---
 
 ## 验证状态
 
@@ -918,81 +1315,125 @@ PowerShell 示例：
 | --- | --- |
 | PostgreSQL Migration | `VERIFIED_CI` |
 | Classification Repository | `VERIFIED_CI` |
-| PostgreSQL Repository 本地真实集成测试 | `VERIFIED_LOCAL` |
-| 独立服务器 PostgreSQL 验证 | `DEFERRED` |
+| PostgreSQL Repository 本地真实测试 | `VERIFIED_LOCAL` |
+| Result Writer → PostgreSQL 本地 E2E | `VERIFIED_LOCAL` |
+| 独立服务器 PostgreSQL | `DEFERRED` |
 | Kafka Publisher | `VERIFIED_CI` |
-| Kafka Consumer Runner | `VERIFIED_CI` |
-| CandidateEvent → ClassificationCommand | `VERIFIED_CI` |
-| Candidate 最小 DLQ | `VERIFIED_CI` |
+| Kafka ConsumerRunner | `VERIFIED_CI` |
+| 真实 Kafka Broker | `DEFERRED` |
 | Candidate Orchestrator | `VERIFIED_CI` |
-| LightCurveRevision 领域类型与 Port | `VERIFIED_CI` |
-| Fake LightCurveRepository | `VERIFIED_CI` |
-| 固定 revision Reader | `VERIFIED_CI` |
-| LightCurveRevision 机械准备 | `VERIFIED_CI` |
-| ModelBundleResolver Port 与 Fake | `VERIFIED_CI` |
-| CoarseModeSelector | `VERIFIED_CI` |
-| ClassificationInput Builder | `VERIFIED_CI` |
+| LightCurveRevision Reader / Prepare | `VERIFIED_CI` |
+| LightCurve HTTP Adapter | `VERIFIED_CI` |
+| 真实上游 LightCurve 服务联调 | `DEFERRED` |
 | ClassificationInputPreparer | `VERIFIED_CI` |
-| 输入准备 Golden 与确定性测试 | `VERIFIED_CI` |
-| ServingBundleResolver Port 与 Fake | `VERIFIED_CI` |
-| model-bundle-manifest-v2 Loader | `VERIFIED_CI` |
-| Triton V2 HTTP Client | `VERIFIED_CI` |
-| Triton Binary Tensor Codec | `VERIFIED_CI` |
-| Triton Metadata / Config / Ready 契约门禁 | `VERIFIED_CI` |
-| VariableStarClassifier Triton Adapter | `VERIFIED_CI` |
-| HTTP Fake Server 推理夹具 | `VERIFIED_CI` |
-| Serving Contract 与 fixture SHA-256 完整性门禁 | `VERIFIED_CI` |
-| 真实 Triton 精确版本契约验收 | `VERIFIED_SERVER` |
-| 真实 Triton 三模式单任务推理 | `VERIFIED_SERVER` |
-| 真实 LightCurve HTTP Adapter | `DEFERRED` |
-| 真实 Kafka Broker 集成测试 | `DEFERRED` |
-| 完整 ClassificationResult Worker / Writer | `NOT_STARTED` |
+| Serving Bundle Loader | `VERIFIED_CI` |
+| Triton Client / Codec / Contract Gate | `VERIFIED_CI` |
+| VariableStarClassifier Adapter | `VERIFIED_CI` |
+| 真实 Triton | `VERIFIED_SERVER` |
+| ClassificationCommand Decoder | `VERIFIED_CI` |
+| Classification Worker | `VERIFIED_CI` |
+| Worker Error Classification | `VERIFIED_CI` |
+| Command Retry / DLQ | `VERIFIED_CI` |
+| Result Publish / Command Offset | `VERIFIED_CI` |
+| ClassificationResult Decoder | `VERIFIED_CI` |
+| Classification Result Writer | `VERIFIED_CI` |
+| Result DLQ / Result Offset | `VERIFIED_CI` |
+| Runtime Composition | `VERIFIED_CI` |
+| 应用层 Command → Run E2E | `VERIFIED_CI` |
+| Transactional Outbox | `DEFERRED` |
+| Kafka + LightCurve + Triton + PostgreSQL 联合 E2E | `DEFERRED` |
+| 正式科学批准 | `PENDING_FORMAL_BENCHMARK` |
 
 状态含义：
 
 ```text
-VERIFIED_LOCAL   已在本地真实环境验证
-VERIFIED_CI      已由 GitHub Actions 验证
-VERIFIED_SERVER  已在独立服务器环境验证
-FAILED           已验证但失败
-DEFERRED         已明确延后
-NOT_STARTED      尚未开始
+VERIFIED_LOCAL
+已在本地真实依赖环境执行通过
+
+VERIFIED_CI
+代码和普通自动化门禁已由 GitHub Actions 验证
+
+VERIFIED_SERVER
+已在独立服务器环境验证
+
+DEFERRED
+明确延后，不能描述为已验证
+
+PENDING_FORMAL_BENCHMARK
+工程链路允许继续，但正式科学批准尚未完成
 ```
 
-阶段 5 工程状态为 `VERIFIED_SERVER`，Serving Contract 和 Go Adapter 已接受。Manifest 继续保持 `DRAFT`，唯一未完成项是正式科学基准与 `scientific_approval`。
+---
 
 ## 阶段边界
 
-阶段 1 已完成工程基础、Protobuf、确定性身份和分类器 Port。
-
-阶段 2 已完成 PostgreSQL Repository 与 Kafka Publisher、Consumer Runner。
-
-阶段 3 已完成 CandidateEvent → ClassificationCommand 最小业务闭环。
-
-阶段 4 已完成固定 revision 到规范化 `ClassificationInput` 的最小输入准备闭环。
-
-阶段 5 已完成 Serving Bundle 解析、Triton V2 HTTP、Binary Tensor、启动契约门禁、VariableStarClassifier Adapter、HTTP fixtures 和真实 Triton 服务器验收。阶段 5 工程闭环已经关闭，正式科学基准作为独立待办保留。
-
-后续阶段：
+阶段 1：
 
 ```text
-阶段 6：ClassificationResult → ClassificationRun → CurrentClassification
+工程基础、Protobuf、确定性身份、分类器 Port
+```
+
+阶段 2：
+
+```text
+PostgreSQL Repository + Kafka 基础设施
+```
+
+阶段 3：
+
+```text
+CandidateEvent → ClassificationCommand
+```
+
+阶段 4：
+
+```text
+fixed LightCurveRevision → ClassificationInput
+```
+
+阶段 5：
+
+```text
+Serving Bundle → Triton → ClassificationOutput
+```
+
+阶段 6：
+
+```text
+ClassificationCommand
+→ Worker
+→ ClassificationResult
+→ Result Writer
+→ ClassificationRun
+→ CurrentClassification
+```
+
+阶段 6 工程闭环状态：
+
+```text
+CLOSED
+```
+
+继续保留的外部验证边界：
+
+```text
+真实 Kafka Broker：DEFERRED
+真实上游 LightCurve 服务：DEFERRED
+独立服务器 PostgreSQL：DEFERRED
+完整联合服务器 E2E：DEFERRED
+Transactional Outbox：DEFERRED
+正式科学批准：PENDING_FORMAL_BENCHMARK
+```
+
+下一阶段：
+
+```text
 阶段 7：查询 API、GUI 与人工复核
+```
+
+后续：
+
+```text
 阶段 8：可靠性、可观测性与安全
 阶段 9：Kubernetes 生产化
 ```
-
-当前保持以下边界：
-
-- 不读取 latest revision；
-- 不自动选择 latest 模型版本；
-- 不虚构上游数据库表或账号；
-- 不实现真实 LightCurve HTTP Adapter；
-- Go 不执行 XGBoost 特征计算；
-- Go 不执行 Transformer 标准化、分桶、padding 或 mask；
-- Triton 统一入口内部负责科学预处理、XGBoost、Transformer 与概率融合；
-- 模型权重和 ONNX 制品不提交到 Go 仓库；
-- 当前不实现推理自动重试、熔断和通用错误分类；
-- 当前不发布 ClassificationResult；
-- 当前不写入 ClassificationRun；
-- 当前不更新 CurrentClassification。
