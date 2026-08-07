@@ -1,0 +1,33 @@
+﻿FROM golang:1.25-bookworm AS builder
+
+WORKDIR /src
+
+COPY go.mod go.sum ./
+RUN go mod download
+
+COPY . .
+
+RUN CGO_ENABLED=0 GOOS=linux go build \
+    -trimpath \
+    -ldflags="-s -w" \
+    -o /out/science-classifier-web \
+    ./cmd/science-classifier-web
+
+
+FROM debian:bookworm-slim
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates \
+    && rm -rf /var/lib/apt/lists/* \
+    && useradd --system --uid 10001 --create-home appuser
+
+WORKDIR /app
+
+COPY --from=builder /out/science-classifier-web /app/science-classifier-web
+COPY --from=builder /src/models/bundles /app/models/bundles
+
+USER appuser
+
+EXPOSE 8088
+
+ENTRYPOINT ["/app/science-classifier-web"]
