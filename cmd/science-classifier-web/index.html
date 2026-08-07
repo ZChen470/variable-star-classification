@@ -1,0 +1,745 @@
+﻿<!doctype html>
+<html lang="zh-CN">
+<head>
+    <meta charset="utf-8">
+    <meta
+            name="viewport"
+            content="width=device-width, initial-scale=1"
+    >
+
+    <title>鍙樻槦鍒嗙被绉戝娴嬭瘯宸ュ叿</title>
+
+    <style>
+        :root {
+            font-family:
+                    system-ui,
+                    -apple-system,
+                    BlinkMacSystemFont,
+                    "Segoe UI",
+                    sans-serif;
+
+            color: #172033;
+            background: #f5f7fb;
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+        }
+
+        main {
+            max-width: 1040px;
+            margin: 0 auto;
+            padding: 32px 20px 64px;
+        }
+
+        h1 {
+            margin-bottom: 8px;
+        }
+
+        h2 {
+            margin-top: 0;
+            font-size: 20px;
+        }
+
+        .muted {
+            color: #667085;
+        }
+
+        .warning {
+            padding: 12px 14px;
+            border: 1px solid #f5c26b;
+            background: #fff9eb;
+            border-radius: 10px;
+            margin: 18px 0;
+        }
+
+        .card {
+            background: white;
+            border: 1px solid #e4e7ec;
+            border-radius: 14px;
+            padding: 20px;
+            margin-top: 18px;
+            box-shadow:
+                    0 3px 14px
+                    rgba(16, 24, 40, 0.04);
+        }
+
+        .row {
+            display: flex;
+            gap: 14px;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+
+        input[type="file"] {
+            max-width: 100%;
+        }
+
+        button {
+            border: 0;
+            border-radius: 9px;
+            background: #175cd3;
+            color: white;
+            padding: 10px 18px;
+            font-weight: 650;
+            cursor: pointer;
+        }
+
+        button:disabled {
+            opacity: 0.55;
+            cursor: wait;
+        }
+
+        code,
+        pre {
+            font-family:
+                    ui-monospace,
+                    SFMono-Regular,
+                    Menlo,
+                    Consolas,
+                    monospace;
+        }
+
+        pre {
+            background: #f2f4f7;
+            border-radius: 9px;
+            padding: 12px;
+            overflow: auto;
+        }
+
+        .error {
+            display: none;
+            color: #b42318;
+            background: #fef3f2;
+            border: 1px solid #fecdca;
+            border-radius: 9px;
+            padding: 12px;
+            margin-top: 14px;
+            white-space: pre-wrap;
+        }
+
+        .result {
+            display: none;
+        }
+
+        .summary {
+            display: grid;
+            grid-template-columns:
+        repeat(
+          auto-fit,
+          minmax(190px, 1fr)
+        );
+
+            gap: 10px;
+        }
+
+        .summary > div {
+            border: 1px solid #eaecf0;
+            border-radius: 9px;
+            padding: 12px;
+        }
+
+        .summary strong {
+            display: block;
+            margin-top: 4px;
+            word-break: break-word;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 10px;
+        }
+
+        th,
+        td {
+            padding: 8px 7px;
+            border-bottom:
+                    1px solid #eaecf0;
+
+            text-align: left;
+        }
+
+        th:last-child,
+        td:last-child {
+            text-align: right;
+        }
+
+        .bar {
+            display: grid;
+            grid-template-columns:
+        minmax(140px, 220px)
+        1fr
+        80px;
+
+            align-items: center;
+            gap: 10px;
+            margin: 8px 0;
+        }
+
+        .track {
+            height: 10px;
+            background: #eaecf0;
+            border-radius: 99px;
+            overflow: hidden;
+        }
+
+        .fill {
+            height: 100%;
+            background: #175cd3;
+        }
+
+        details {
+            margin-top: 16px;
+        }
+
+        @media (max-width: 620px) {
+            .bar {
+                grid-template-columns:
+          120px 1fr 70px;
+
+                font-size: 13px;
+            }
+        }
+    </style>
+</head>
+
+<body>
+
+<main>
+
+    <h1>
+        鍙樻槦鍒嗙被绉戝娴嬭瘯宸ュ叿
+    </h1>
+
+    <p class="muted">
+        涓婁紶涓€鏉″厜鍙樻洸绾匡紝鐩存帴璋冪敤褰撳墠閰嶇疆鐨?
+        Triton Inference Server锛?
+        杩斿洖绮楀垎绫汇€佹潯浠剁粏鍒嗙被鍜?12 绫诲彾瀛愭鐜囥€?
+    </p>
+
+    <div class="warning">
+        <strong>闈炵敓浜у伐鍏枫€?/strong>
+        姝ら〉闈笉浣跨敤 Kafka銆丳ostgreSQL銆?
+        Candidate/Result 娴佺▼锛?
+        涔熶笉淇濆瓨涓婁紶鏂囦欢鎴栧垎绫荤粨鏋溿€?
+        瀹冨彧鐢ㄤ簬绉戝鐢ㄦ埛蹇€熸祴璇曟ā鍨嬨€?
+    </div>
+
+    <section class="card">
+
+        <h2>
+            1. 涓婁紶鍏夊彉鏇茬嚎
+        </h2>
+
+        <p>
+            鏀寔 CSV 鎴栫┖鏍?Tab 鍒嗛殧鏂囨湰銆?
+            姣忚蹇呴』鏈変笁鍒楋細
+            <code>
+                time magnitude magnitude_error
+            </code>銆?
+        </p>
+
+        <p class="muted">
+            鍙甫琛ㄥご銆?
+            鏀寔
+            <code>time / mjd / observation_time</code>銆?
+            <code>magnitude / mag</code>銆?
+            <code>magnitude_error / mag_err</code>銆?
+            绌鸿鍜屼互 <code>#</code> 寮€澶寸殑娉ㄩ噴浼氳蹇界暐銆?
+        </p>
+
+        <pre>time,magnitude,magnitude_error
+60001.123,14.21,0.03
+60002.456,14.18,0.02
+60003.789,14.25,0.03</pre>
+
+        <div class="row">
+
+            <input
+                    id="file"
+                    type="file"
+                    accept=".csv,.txt,.dat,text/plain,text/csv"
+            >
+
+            <button
+                    id="submit"
+                    type="button"
+            >
+                寮€濮嬪垎绫?
+            </button>
+
+        </div>
+
+        <div
+                id="error"
+                class="error"
+        ></div>
+
+    </section>
+
+    <section
+            id="result"
+            class="card result"
+    >
+
+        <h2>
+            2. 鍒嗙被缁撴灉
+        </h2>
+
+        <div class="summary">
+
+            <div>
+                棰勬祴鍙跺瓙绫诲埆
+                <strong id="predictedLeaf">-</strong>
+            </div>
+
+            <div>
+                鍙跺瓙鏈€澶ф鐜?
+                <strong id="maxLeaf">-</strong>
+            </div>
+
+            <div>
+                棰勬祴绮楃被鍒?
+                <strong id="predictedCoarse">-</strong>
+            </div>
+
+            <div>
+                绮楃被鏈€澶ф鐜?
+                <strong id="maxCoarse">-</strong>
+            </div>
+
+            <div>
+                鍘嗗厓鏁?
+                <strong id="epochCount">-</strong>
+            </div>
+
+            <div>
+                CoarseMode
+                <strong id="coarseMode">-</strong>
+            </div>
+
+            <div>
+                XGBoost 鏈鎵ц
+                <strong id="xgbExecuted">-</strong>
+            </div>
+
+            <div>
+                Model Bundle
+                <strong id="bundle">-</strong>
+            </div>
+
+        </div>
+
+        <h3>
+            12 绫绘渶缁堟鐜?
+        </h3>
+
+        <div id="leafBars"></div>
+
+        <h3>
+            7 绫荤矖鍒嗙被姒傜巼
+        </h3>
+
+        <div id="coarseBars"></div>
+
+        <details>
+
+            <summary>
+                鏌ョ湅 10 缁存潯浠剁粏鍒嗙被姒傜巼
+            </summary>
+
+            <div id="fineTable"></div>
+
+        </details>
+
+        <details>
+
+            <summary>
+                璇锋眰淇℃伅
+            </summary>
+
+            <table>
+                <tbody>
+
+                <tr>
+                    <th>Request ID</th>
+                    <td id="requestID"></td>
+                </tr>
+
+                <tr>
+                    <th>鏂囦欢鍚?/th>
+                    <td id="fileName"></td>
+                </tr>
+
+                <tr>
+                    <th>Triton Model</th>
+                    <td id="model"></td>
+                </tr>
+
+                </tbody>
+            </table>
+
+        </details>
+
+    </section>
+
+</main>
+
+<script>
+
+    const fileInput =
+        document.getElementById(
+            "file"
+        );
+
+    const submit =
+        document.getElementById(
+            "submit"
+        );
+
+    const errorBox =
+        document.getElementById(
+            "error"
+        );
+
+    const result =
+        document.getElementById(
+            "result"
+        );
+
+    function probabilityText(value) {
+        return `${(
+            value * 100
+        ).toFixed(4)}%`;
+    }
+
+    function renderBars(
+        targetID,
+        items
+    ) {
+        const target =
+            document.getElementById(
+                targetID
+            );
+
+        target.replaceChildren();
+
+        [...items]
+            .sort(
+                (a, b) =>
+                    b.probability -
+                    a.probability
+            )
+            .forEach(
+                item => {
+                    const row =
+                        document.createElement(
+                            "div"
+                        );
+
+                    row.className = "bar";
+
+                    const label =
+                        document.createElement(
+                            "div"
+                        );
+
+                    label.textContent =
+                        item.class;
+
+                    const track =
+                        document.createElement(
+                            "div"
+                        );
+
+                    track.className =
+                        "track";
+
+                    const fill =
+                        document.createElement(
+                            "div"
+                        );
+
+                    fill.className =
+                        "fill";
+
+                    fill.style.width =
+                        `${Math.max(
+                            0,
+                            Math.min(
+                                100,
+                                item.probability *
+                                100
+                            )
+                        )}%`;
+
+                    track.appendChild(fill);
+
+                    const value =
+                        document.createElement(
+                            "div"
+                        );
+
+                    value.textContent =
+                        probabilityText(
+                            item.probability
+                        );
+
+                    row.append(
+                        label,
+                        track,
+                        value
+                    );
+
+                    target.appendChild(row);
+                }
+            );
+    }
+
+    function renderFine(items) {
+        const target =
+            document.getElementById(
+                "fineTable"
+            );
+
+        const table =
+            document.createElement(
+                "table"
+            );
+
+        const tbody =
+            document.createElement(
+                "tbody"
+            );
+
+        items.forEach(
+            item => {
+                const tr =
+                    document.createElement(
+                        "tr"
+                    );
+
+                const label =
+                    document.createElement(
+                        "td"
+                    );
+
+                label.textContent =
+                    item.class;
+
+                const value =
+                    document.createElement(
+                        "td"
+                    );
+
+                value.textContent =
+                    probabilityText(
+                        item.probability
+                    );
+
+                tr.append(
+                    label,
+                    value
+                );
+
+                tbody.appendChild(tr);
+            }
+        );
+
+        table.appendChild(tbody);
+
+        target.replaceChildren(
+            table
+        );
+    }
+
+    submit.addEventListener(
+        "click",
+        async () => {
+
+            errorBox.style.display =
+                "none";
+
+            result.style.display =
+                "none";
+
+            const file =
+                fileInput.files[0];
+
+            if (!file) {
+                errorBox.textContent =
+                    "璇烽€夋嫨涓€涓厜鍙樻洸绾挎枃浠躲€?;
+
+                errorBox.style.display =
+                    "block";
+
+                return;
+            }
+
+            const form =
+                new FormData();
+
+            form.append(
+                "file",
+                file
+            );
+
+            submit.disabled = true;
+
+            submit.textContent =
+                "鍒嗙被涓€?;
+
+            try {
+
+                const response =
+                    await fetch(
+                        "/api/classify",
+                        {
+                            method: "POST",
+                            body: form
+                        }
+                    );
+
+                const payload =
+                    await response.json();
+
+                if (!response.ok) {
+                    throw new Error(
+                        payload.error ||
+                        `HTTP ${response.status}`
+                    );
+                }
+
+                document
+                    .getElementById(
+                        "predictedLeaf"
+                    )
+                    .textContent =
+                    payload
+                        .predicted_leaf_class;
+
+                document
+                    .getElementById(
+                        "maxLeaf"
+                    )
+                    .textContent =
+                    probabilityText(
+                        payload
+                            .maximum_leaf_probability
+                    );
+
+                document
+                    .getElementById(
+                        "predictedCoarse"
+                    )
+                    .textContent =
+                    payload
+                        .predicted_coarse_class;
+
+                document
+                    .getElementById(
+                        "maxCoarse"
+                    )
+                    .textContent =
+                    probabilityText(
+                        payload
+                            .maximum_coarse_probability
+                    );
+
+                document
+                    .getElementById(
+                        "epochCount"
+                    )
+                    .textContent =
+                    payload.epoch_count;
+
+                document
+                    .getElementById(
+                        "coarseMode"
+                    )
+                    .textContent =
+                    payload.coarse_mode;
+
+                document
+                    .getElementById(
+                        "xgbExecuted"
+                    )
+                    .textContent =
+                    payload.xgboost_executed
+                        ? "鏄?
+                        : "鍚?;
+
+                document
+                    .getElementById(
+                        "bundle"
+                    )
+                    .textContent =
+                    payload
+                        .model_bundle_version;
+
+                document
+                    .getElementById(
+                        "requestID"
+                    )
+                    .textContent =
+                    payload.request_id;
+
+                document
+                    .getElementById(
+                        "fileName"
+                    )
+                    .textContent =
+                    payload.file_name;
+
+                document
+                    .getElementById(
+                        "model"
+                    )
+                    .textContent =
+                    `${payload.model_name}:${payload.model_version}`;
+
+                renderBars(
+                    "leafBars",
+                    payload.leaf_probabilities
+                );
+
+                renderBars(
+                    "coarseBars",
+                    payload.coarse_probabilities
+                );
+
+                renderFine(
+                    payload
+                        .fine_conditional_probabilities
+                );
+
+                result.style.display =
+                    "block";
+
+            } catch (error) {
+
+                errorBox.textContent =
+                    error.message;
+
+                errorBox.style.display =
+                    "block";
+
+            } finally {
+
+                submit.disabled = false;
+
+                submit.textContent =
+                    "寮€濮嬪垎绫?;
+            }
+        }
+    );
+
+</script>
+
+</body>
+</html>
