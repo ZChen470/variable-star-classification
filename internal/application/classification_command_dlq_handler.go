@@ -19,6 +19,7 @@ type ClassificationCommandDLQHandler struct {
 	dlqTopic  string
 	publisher MessagePublisher
 	logger    *slog.Logger
+	observer  ClassificationCommandObserver
 }
 
 var _ MessageHandler = (*ClassificationCommandDLQHandler)(nil)
@@ -28,16 +29,32 @@ func NewClassificationCommandDLQHandler(
 	dlqTopic string,
 	publisher MessagePublisher,
 ) (*ClassificationCommandDLQHandler, error) {
+	return NewClassificationCommandDLQHandlerWithObserver(
+		next,
+		dlqTopic,
+		publisher,
+		nil,
+	)
+}
+
+func NewClassificationCommandDLQHandlerWithObserver(
+	next MessageHandler,
+	dlqTopic string,
+	publisher MessagePublisher,
+	observer ClassificationCommandObserver,
+) (*ClassificationCommandDLQHandler, error) {
 	if next == nil {
 		return nil, errors.New(
 			"classification worker handler must not be nil",
 		)
 	}
+
 	if dlqTopic == "" {
 		return nil, errors.New(
 			"classification command DLQ topic must not be empty",
 		)
 	}
+
 	if publisher == nil {
 		return nil, errors.New(
 			"classification command DLQ publisher must not be empty",
@@ -49,6 +66,9 @@ func NewClassificationCommandDLQHandler(
 		dlqTopic:  dlqTopic,
 		publisher: publisher,
 		logger:    slog.Default(),
+		observer: classificationCommandObserverOrNoop(
+			observer,
+		),
 	}, nil
 }
 
@@ -161,6 +181,8 @@ func (handler *ClassificationCommandDLQHandler) Handle(
 
 		return wrappedErr
 	}
+
+	handler.observer.DLQPublished()
 
 	logger.WarnContext(
 		ctx,

@@ -25,6 +25,7 @@ type ClassificationCommandRetryHandler struct {
 	next        MessageHandler
 	retryDelays []time.Duration
 	logger      *slog.Logger
+	observer    ClassificationCommandObserver
 }
 
 var _ MessageHandler = (*ClassificationCommandRetryHandler)(nil)
@@ -33,16 +34,30 @@ func NewClassificationCommandRetryHandler(
 	next MessageHandler,
 	retryDelays []time.Duration,
 ) (*ClassificationCommandRetryHandler, error) {
+	return NewClassificationCommandRetryHandlerWithObserver(
+		next,
+		retryDelays,
+		nil,
+	)
+}
+
+func NewClassificationCommandRetryHandlerWithObserver(
+	next MessageHandler,
+	retryDelays []time.Duration,
+	observer ClassificationCommandObserver,
+) (*ClassificationCommandRetryHandler, error) {
 	if next == nil {
 		return nil, errors.New(
 			"classification worker handler must not be nil",
 		)
 	}
+
 	if len(retryDelays) == 0 {
 		return nil, errors.New(
 			"classification command retry delays must be empty",
 		)
 	}
+
 	for _, delay := range retryDelays {
 		if delay < 0 {
 			return nil, fmt.Errorf(
@@ -56,6 +71,9 @@ func NewClassificationCommandRetryHandler(
 		next:        next,
 		retryDelays: retryDelays,
 		logger:      slog.Default(),
+		observer: classificationCommandObserverOrNoop(
+			observer,
+		),
 	}, nil
 }
 
@@ -95,6 +113,8 @@ func (handler *ClassificationCommandRetryHandler) Handle(
 
 		// retryDelays 的数量就是允许进行的额外重试次数。
 		if attempt >= len(handler.retryDelays) {
+			handler.observer.RetryExhausted()
+
 			logger.WarnContext(
 				ctx,
 				"classification command retry exhausted",
@@ -168,6 +188,8 @@ func (handler *ClassificationCommandRetryHandler) Handle(
 
 			return wrappedErr
 		}
+
+		handler.observer.RetryAttempted()
 	}
 }
 
