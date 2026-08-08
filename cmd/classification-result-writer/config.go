@@ -17,7 +17,10 @@ const (
 
 	envPostgresDSN = "POSTGRES_DSN"
 
-	defaultKafkaClientID = project.Name + "-classification-result-writer"
+	envManagementListenAddr = "MANAGEMENT_LISTEN_ADDR"
+
+	defaultKafkaClientID        = project.Name + "-classification-result-writer"
+	defaultManagementListenAddr = "127.0.0.1:9091"
 )
 
 type classificationResultWriterConfig struct {
@@ -29,6 +32,8 @@ type classificationResultWriterConfig struct {
 	classificationResultDLQTopic string
 
 	postgresDSN string
+
+	managementListenAddr string
 }
 
 func loadClassificationResultWriterConfig(lookup func(string) (string, bool)) (classificationResultWriterConfig, error) {
@@ -86,6 +91,15 @@ func loadClassificationResultWriterConfig(lookup func(string) (string, bool)) (c
 		}
 	}
 
+	managementListenAddr := defaultManagementListenAddr
+
+	if rawAddr, ok := lookup(envManagementListenAddr); ok {
+		trimmedAddr := strings.TrimSpace(rawAddr)
+		if trimmedAddr != "" {
+			managementListenAddr = trimmedAddr
+		}
+	}
+
 	return classificationResultWriterConfig{
 		kafkaBrokers:                 brokers,
 		kafkaConsumerGroup:           consumerGroup,
@@ -93,6 +107,7 @@ func loadClassificationResultWriterConfig(lookup func(string) (string, bool)) (c
 		classificationResultTopic:    resultTopic,
 		classificationResultDLQTopic: resultDLQTopic,
 		postgresDSN:                  postgresDSN,
+		managementListenAddr:         managementListenAddr,
 	}, nil
 }
 
