@@ -18,6 +18,7 @@ import (
 	"github.com/ZChen470/variable-star-classification/internal/observability/kafkametrics"
 	"github.com/ZChen470/variable-star-classification/internal/observability/logging"
 	"github.com/ZChen470/variable-star-classification/internal/observability/management"
+	"github.com/ZChen470/variable-star-classification/internal/observability/postgresmetrics"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/twmb/franz-go/pkg/kgo"
 )
@@ -90,6 +91,16 @@ func run(logger *slog.Logger) error {
 	if err := pool.Ping(runContext); err != nil {
 		return fmt.Errorf(
 			"ping PostgreSQL: %w",
+			err,
+		)
+	}
+
+	if _, err := postgresmetrics.New(
+		registry,
+		pool,
+	); err != nil {
+		return fmt.Errorf(
+			"create PostgreSQL pool metrics: %w",
 			err,
 		)
 	}
