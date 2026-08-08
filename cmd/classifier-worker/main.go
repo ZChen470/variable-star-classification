@@ -17,6 +17,7 @@ import (
 	postgresadapter "github.com/ZChen470/variable-star-classification/internal/adapter/postgres"
 	tritonadapter "github.com/ZChen470/variable-star-classification/internal/adapter/triton"
 	"github.com/ZChen470/variable-star-classification/internal/application"
+	"github.com/ZChen470/variable-star-classification/internal/observability/commandmetrics"
 	"github.com/ZChen470/variable-star-classification/internal/observability/httpmetrics"
 	"github.com/ZChen470/variable-star-classification/internal/observability/kafkametrics"
 	"github.com/ZChen470/variable-star-classification/internal/observability/logging"
@@ -91,6 +92,14 @@ func run(logger *slog.Logger) error {
 	if err != nil {
 		return fmt.Errorf(
 			"create HTTP client metrics: %w",
+			err,
+		)
+	}
+
+	commandObserver, err := commandmetrics.New(registry)
+	if err != nil {
+		return fmt.Errorf(
+			"create classification command metrics: %w",
 			err,
 		)
 	}
@@ -316,11 +325,12 @@ func run(logger *slog.Logger) error {
 	}
 
 	handler, err :=
-		application.NewClassificationCommandHandler(
+		application.NewClassificationCommandHandlerWithObserver(
 			worker,
 			classificationRetryDelays,
 			config.classificationCommandDLQTopic,
 			publisher,
+			commandObserver,
 		)
 	if err != nil {
 		return fmt.Errorf(
