@@ -3,25 +3,34 @@ package main
 import (
 	"context"
 	"fmt"
-	"log"
+	"log/slog"
 	"os"
 	"os/signal"
 	"syscall"
 
 	kafkaadapter "github.com/ZChen470/variable-star-classification/internal/adapter/kafka"
 	"github.com/ZChen470/variable-star-classification/internal/application"
+	"github.com/ZChen470/variable-star-classification/internal/observability/logging"
 	"github.com/twmb/franz-go/pkg/kgo"
 )
 
+const serviceName = "candidate-orchestrator"
+
 func main() {
-	if err := run(); err != nil {
-		log.Printf("candidate orchestrator failed: %v", err)
+	logger := logging.NewJSON(os.Stderr, serviceName)
+	slog.SetDefault(logger)
+
+	if err := run(logger); err != nil {
+		logger.Error(
+			"service failed",
+			"operation", "run",
+			"error", err,
+		)
 		os.Exit(1)
 	}
 }
 
-func run() error {
-	// 加载配置，传入 os.LookupEnv 函数，将环境变量读取逻辑注入配置加载器
+func run(logger *slog.Logger) error {
 	config, err := loadCandidateOrchestratorConfig(
 		os.LookupEnv,
 	)
@@ -31,21 +40,20 @@ func run() error {
 			err,
 		)
 	}
-	// 创建 Kafka 客户端
+
 	client, err := kgo.NewClient(
-		kgo.SeedBrokers(config.kafkaBrokers...),      // Kafka 集群地址
-		kgo.ClientID(config.kafkaClientID),           // 客户端标识，便于监控和排查
-		kgo.ConsumerGroup(config.kafkaConsumerGroup), // 消费者组，实现负载均衡
-		kgo.ConsumeTopics(config.candidateTopic),     // 订阅的主题
-		kgo.DisableAutoCommit(),                      // 手动提交 Offset，确保消息处理成功后再确认
-		kgo.BlockRebalanceOnPoll(),                   // 在消息处理期间阻止分区再平衡，避免重复消费
+		kgo.SeedBrokers(config.kafkaBrokers...),
+		kgo.ClientID(config.kafkaClientID),
+		kgo.ConsumerGroup(config.kafkaConsumerGroup),
+		kgo.ConsumeTopics(config.candidateTopic),
+		kgo.DisableAutoCommit(),
+		kgo.BlockRebalanceOnPoll(),
 	)
 	if err != nil {
 		return fmt.Errorf("create Kafka client: %w", err)
 	}
 	defer client.CloseAllowingRebalance()
 
-	// 初始化业务组件
 	policy, err := application.NewClassificationPolicyV1(
 		config.modelBundleVersion,
 	)
@@ -69,7 +77,6 @@ func run() error {
 		return fmt.Errorf("create candidate handler: %w", err)
 	}
 
-	// 创建消费者运行器
 	runner, err := kafkaadapter.NewConsumerRunner(
 		client,
 		handler,
@@ -78,7 +85,6 @@ func run() error {
 		return fmt.Errorf("create Kafka consumer runner: %w", err)
 	}
 
-	// 优雅关闭
 	ctx, stop := signal.NotifyContext(
 		context.Background(),
 		os.Interrupt,
@@ -86,20 +92,31 @@ func run() error {
 	)
 	defer stop()
 
-	log.Printf(
-		"candidate orchestrator started: client_id=%q consumer_group=%q candidate_topic=%q command_topic=%q candidate_dlq_topic=%q",
-		config.kafkaClientID,
-		config.kafkaConsumerGroup,
-		config.candidateTopic,
-		config.classificationCommandTopic,
-		config.candidateDLQTopic,
+	logger.InfoContext(
+		ctx,
+		"service started",
+		"operation", "startup",
+		"kafka_client_id", config.kafkaClientID,
+		"kafka_consumer_group", config.kafkaConsumerGroup,
+		"candidate_topic", config.candidateTopic,
+		"command_topic", config.classificationCommandTopic,
+		"candidate_dlq_topic", config.candidateDLQTopic,
 	)
 
-	// 启动服务
 	if err := runner.Run(ctx); err != nil {
 		return fmt.Errorf("run candidate orchestrator: %w", err)
 	}
 
-	log.Printf("candidate orchestrator stopped")
+	shutdownReason := "consumer_runner_stopped"
+	if ctx.Err() != nil {
+		shutdownReason = "context_cancelled"
+	}
+
+	logger.Info(
+		"service stopped",
+		"operation", "shutdown",
+		"shutdown_reason", shutdownReason,
+	)
+
 	return nil
 }
