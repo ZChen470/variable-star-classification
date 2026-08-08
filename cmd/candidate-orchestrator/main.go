@@ -14,6 +14,7 @@ import (
 
 	kafkaadapter "github.com/ZChen470/variable-star-classification/internal/adapter/kafka"
 	"github.com/ZChen470/variable-star-classification/internal/application"
+	"github.com/ZChen470/variable-star-classification/internal/observability/kafkametrics"
 	"github.com/ZChen470/variable-star-classification/internal/observability/logging"
 	"github.com/ZChen470/variable-star-classification/internal/observability/management"
 	"github.com/twmb/franz-go/pkg/kgo"
@@ -50,6 +51,16 @@ func run(logger *slog.Logger) error {
 		)
 	}
 
+	registry := management.NewRegistry()
+
+	kafkaMetrics, err := kafkametrics.New(registry)
+	if err != nil {
+		return fmt.Errorf(
+			"create Kafka metrics hook: %w",
+			err,
+		)
+	}
+
 	client, err := kgo.NewClient(
 		kgo.SeedBrokers(config.kafkaBrokers...),
 		kgo.ClientID(config.kafkaClientID),
@@ -57,9 +68,13 @@ func run(logger *slog.Logger) error {
 		kgo.ConsumeTopics(config.candidateTopic),
 		kgo.DisableAutoCommit(),
 		kgo.BlockRebalanceOnPoll(),
+		kgo.WithHooks(kafkaMetrics),
 	)
 	if err != nil {
-		return fmt.Errorf("create Kafka client: %w", err)
+		return fmt.Errorf(
+			"create Kafka client: %w",
+			err,
+		)
 	}
 	defer client.CloseAllowingRebalance()
 
@@ -83,7 +98,10 @@ func run(logger *slog.Logger) error {
 		publisher,
 	)
 	if err != nil {
-		return fmt.Errorf("create candidate handler: %w", err)
+		return fmt.Errorf(
+			"create candidate handler: %w",
+			err,
+		)
 	}
 
 	runner, err := kafkaadapter.NewConsumerRunner(
@@ -110,7 +128,6 @@ func run(logger *slog.Logger) error {
 	defer cancelRun()
 
 	readiness := management.NewReadiness()
-	registry := management.NewRegistry()
 
 	managementHandler, err := management.NewHandler(
 		readiness,
@@ -140,7 +157,10 @@ func run(logger *slog.Logger) error {
 		ReadHeaderTimeout: managementReadHeaderTimeout,
 	}
 
-	managementServeErrors := make(chan error, 1)
+	managementServeErrors := make(
+		chan error,
+		1,
+	)
 
 	go func() {
 		serveErr := managementServer.Serve(
@@ -160,13 +180,6 @@ func run(logger *slog.Logger) error {
 		managementServeErrors <- nil
 	}()
 
-	// candidate-orchestrator 到这里已经完成：
-	// - 配置校验
-	// - Kafka client 构造
-	// - Policy / Handler / ConsumerRunner 装配
-	// - management listener 成功 bind
-	//
-	// readiness 不主动对 Kafka Broker 做额外网络探测。
 	readiness.SetReady()
 
 	logger.InfoContext(
@@ -184,7 +197,6 @@ func run(logger *slog.Logger) error {
 
 	runnerErr := runner.Run(runContext)
 
-	// 一旦 ConsumerRunner 停止，不再对外宣称 ready。
 	readiness.SetNotReady()
 	cancelRun()
 
@@ -196,7 +208,9 @@ func run(logger *slog.Logger) error {
 	defer cancelShutdown()
 
 	managementShutdownErr :=
-		managementServer.Shutdown(shutdownContext)
+		managementServer.Shutdown(
+			shutdownContext,
+		)
 
 	managementServeErr := <-managementServeErrors
 
