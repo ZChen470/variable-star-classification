@@ -17,6 +17,7 @@ import (
 	postgresadapter "github.com/ZChen470/variable-star-classification/internal/adapter/postgres"
 	tritonadapter "github.com/ZChen470/variable-star-classification/internal/adapter/triton"
 	"github.com/ZChen470/variable-star-classification/internal/application"
+	"github.com/ZChen470/variable-star-classification/internal/observability/httpmetrics"
 	"github.com/ZChen470/variable-star-classification/internal/observability/kafkametrics"
 	"github.com/ZChen470/variable-star-classification/internal/observability/logging"
 	"github.com/ZChen470/variable-star-classification/internal/observability/management"
@@ -85,6 +86,14 @@ func run(logger *slog.Logger) error {
 		)
 	}
 
+	httpMetrics, err := httpmetrics.New(registry)
+	if err != nil {
+		return fmt.Errorf(
+			"create HTTP client metrics: %w",
+			err,
+		)
+	}
+
 	servingResolver, err :=
 		modelbundleadapter.NewFileServingBundleResolver(
 			config.modelBundleManifestPath,
@@ -114,8 +123,20 @@ func run(logger *slog.Logger) error {
 			serving: servingResolver,
 		}
 
+	lightCurveTransport, err := httpMetrics.WrapTransport(
+		httpmetrics.TargetLightCurve,
+		http.DefaultTransport,
+	)
+	if err != nil {
+		return fmt.Errorf(
+			"create LightCurve HTTP metrics transport: %w",
+			err,
+		)
+	}
+
 	lightCurveHTTPClient := &http.Client{
-		Timeout: lightCurveHTTPTimeout,
+		Transport: lightCurveTransport,
+		Timeout:   lightCurveHTTPTimeout,
 	}
 
 	lightCurveRepository, err := newLightCurveRepository(
@@ -186,8 +207,20 @@ func run(logger *slog.Logger) error {
 		)
 	}
 
+	tritonTransport, err := httpMetrics.WrapTransport(
+		httpmetrics.TargetTriton,
+		http.DefaultTransport,
+	)
+	if err != nil {
+		return fmt.Errorf(
+			"create Triton HTTP metrics transport: %w",
+			err,
+		)
+	}
+
 	tritonHTTPClient := &http.Client{
-		Timeout: tritonHTTPTimeout,
+		Transport: tritonTransport,
+		Timeout:   tritonHTTPTimeout,
 	}
 
 	tritonClient, err := tritonadapter.NewClient(
