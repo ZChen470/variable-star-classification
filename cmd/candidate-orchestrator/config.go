@@ -16,7 +16,10 @@ const (
 	envClassificationCommandTopic = "CLASSIFICATION_COMMAND_TOPIC"
 	envCandidateDLQTopic          = "CANDIDATE_DLQ_TOPIC"
 	envModelBundleVersion         = "MODEL_BUNDLE_VERSION"
-	defaultKafkaClientID          = project.Name + "-candidate-orchestrator"
+	envManagementListenAddr       = "MANAGEMENT_LISTEN_ADDR"
+
+	defaultKafkaClientID        = project.Name + "-candidate-orchestrator"
+	defaultManagementListenAddr = "127.0.0.1:9091"
 )
 
 type candidateOrchestratorConfig struct {
@@ -27,9 +30,12 @@ type candidateOrchestratorConfig struct {
 	classificationCommandTopic string
 	candidateDLQTopic          string
 	modelBundleVersion         string
+	managementListenAddr       string
 }
 
-func loadCandidateOrchestratorConfig(lookup func(string) (string, bool)) (candidateOrchestratorConfig, error) {
+func loadCandidateOrchestratorConfig(
+	lookup func(string) (string, bool),
+) (candidateOrchestratorConfig, error) {
 	if lookup == nil {
 		return candidateOrchestratorConfig{},
 			errors.New("environment lookup must not be nil")
@@ -96,6 +102,14 @@ func loadCandidateOrchestratorConfig(lookup func(string) (string, bool)) (candid
 		}
 	}
 
+	managementListenAddr := defaultManagementListenAddr
+	if rawAddr, ok := lookup(envManagementListenAddr); ok {
+		trimmedAddr := strings.TrimSpace(rawAddr)
+		if trimmedAddr != "" {
+			managementListenAddr = trimmedAddr
+		}
+	}
+
 	return candidateOrchestratorConfig{
 		kafkaBrokers:               brokers,
 		kafkaConsumerGroup:         consumerGroup,
@@ -104,10 +118,14 @@ func loadCandidateOrchestratorConfig(lookup func(string) (string, bool)) (candid
 		classificationCommandTopic: commandTopic,
 		candidateDLQTopic:          dlqTopic,
 		modelBundleVersion:         modelBundleVersion,
+		managementListenAddr:       managementListenAddr,
 	}, nil
 }
 
-func requiredTrimmedEnvironmentValue(lookup func(string) (string, bool), name string) (string, error) {
+func requiredTrimmedEnvironmentValue(
+	lookup func(string) (string, bool),
+	name string,
+) (string, error) {
 	value, ok := lookup(name)
 	if !ok {
 		return "", fmt.Errorf(
@@ -127,7 +145,10 @@ func requiredTrimmedEnvironmentValue(lookup func(string) (string, bool), name st
 	return trimmed, nil
 }
 
-func requiredExactEnvironmentValue(lookup func(string) (string, bool), name string) (string, error) {
+func requiredExactEnvironmentValue(
+	lookup func(string) (string, bool),
+	name string,
+) (string, error) {
 	value, ok := lookup(name)
 	if !ok || strings.TrimSpace(value) == "" {
 		return "", fmt.Errorf(
