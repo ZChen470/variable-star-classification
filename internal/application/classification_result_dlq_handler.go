@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 )
 
 // ClassificationResultDLQHandler 为 Result Writer 增加永久错误 DLQ 处置。
@@ -13,6 +14,7 @@ type ClassificationResultDLQHandler struct {
 	next      MessageHandler
 	dlqTopic  string
 	publisher MessagePublisher
+	logger    *slog.Logger
 }
 
 var _ MessageHandler = (*ClassificationResultDLQHandler)(nil)
@@ -44,6 +46,7 @@ func NewClassificationResultDLQHandler(
 		next:      next,
 		dlqTopic:  dlqTopic,
 		publisher: publisher,
+		logger:    slog.Default(),
 	}, nil
 }
 
@@ -79,6 +82,11 @@ func (handler *ClassificationResultDLQHandler) Handle(
 		return err
 	}
 
+	logger := handler.logger
+	if logger == nil {
+		logger = slog.Default()
+	}
+
 	err := handler.next.Handle(ctx, message)
 	if err == nil {
 		return nil
@@ -91,6 +99,18 @@ func (handler *ClassificationResultDLQHandler) Handle(
 		return err
 	}
 
+	logger.WarnContext(
+		ctx,
+		"classification result permanent failure",
+		"operation", "classification_result_permanent_failure",
+		"error_code", string(permanentError.Code),
+		"error_class", "PERMANENT",
+		"error_field", permanentError.Field,
+		"kafka_topic", message.Topic,
+		"kafka_partition", message.Partition,
+		"kafka_offset", message.Offset,
+	)
+
 	dlqMessage, buildErr :=
 		BuildClassificationResultDLQMessage(
 			handler.dlqTopic,
@@ -98,6 +118,19 @@ func (handler *ClassificationResultDLQHandler) Handle(
 			permanentError,
 		)
 	if buildErr != nil {
+		logger.ErrorContext(
+			ctx,
+			"classification result DLQ build failed",
+			"operation", "classification_result_dlq_build",
+			"source_error_code", string(permanentError.Code),
+			"source_error_class", "PERMANENT",
+			"source_error_field", permanentError.Field,
+			"kafka_topic", message.Topic,
+			"kafka_partition", message.Partition,
+			"kafka_offset", message.Offset,
+			"dlq_topic", handler.dlqTopic,
+		)
+
 		return fmt.Errorf(
 			"build classification result DLQ: %w",
 			buildErr,
@@ -108,11 +141,37 @@ func (handler *ClassificationResultDLQHandler) Handle(
 		ctx,
 		dlqMessage,
 	); publishErr != nil {
+		logger.ErrorContext(
+			ctx,
+			"classification result DLQ publish failed",
+			"operation", "classification_result_dlq_publish",
+			"source_error_code", string(permanentError.Code),
+			"source_error_class", "PERMANENT",
+			"source_error_field", permanentError.Field,
+			"kafka_topic", message.Topic,
+			"kafka_partition", message.Partition,
+			"kafka_offset", message.Offset,
+			"dlq_topic", handler.dlqTopic,
+		)
+
 		return fmt.Errorf(
 			"publish classification result DLQ: %w",
 			publishErr,
 		)
 	}
+
+	logger.WarnContext(
+		ctx,
+		"classification result published to DLQ",
+		"operation", "classification_result_dlq_publish",
+		"source_error_code", string(permanentError.Code),
+		"source_error_class", "PERMANENT",
+		"source_error_field", permanentError.Field,
+		"kafka_topic", message.Topic,
+		"kafka_partition", message.Partition,
+		"kafka_offset", message.Offset,
+		"dlq_topic", handler.dlqTopic,
+	)
 
 	// 原始 Result 已由 DLQ 安全接收，外层可以提交其 offset。
 	return nil
