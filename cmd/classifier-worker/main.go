@@ -17,6 +17,7 @@ import (
 	postgresadapter "github.com/ZChen470/variable-star-classification/internal/adapter/postgres"
 	tritonadapter "github.com/ZChen470/variable-star-classification/internal/adapter/triton"
 	"github.com/ZChen470/variable-star-classification/internal/application"
+	"github.com/ZChen470/variable-star-classification/internal/observability/kafkametrics"
 	"github.com/ZChen470/variable-star-classification/internal/observability/logging"
 	"github.com/ZChen470/variable-star-classification/internal/observability/management"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -73,6 +74,16 @@ func run(logger *slog.Logger) error {
 		signalContext,
 	)
 	defer cancelRun()
+
+	registry := management.NewRegistry()
+
+	kafkaMetrics, err := kafkametrics.New(registry)
+	if err != nil {
+		return fmt.Errorf(
+			"create Kafka metrics hook: %w",
+			err,
+		)
+	}
 
 	servingResolver, err :=
 		modelbundleadapter.NewFileServingBundleResolver(
@@ -231,6 +242,7 @@ func run(logger *slog.Logger) error {
 		kgo.ConsumeTopics(config.classificationCommandTopic),
 		kgo.DisableAutoCommit(),
 		kgo.BlockRebalanceOnPoll(),
+		kgo.WithHooks(kafkaMetrics),
 	)
 	if err != nil {
 		return fmt.Errorf(
@@ -285,7 +297,6 @@ func run(logger *slog.Logger) error {
 	}
 
 	readiness := management.NewReadiness()
-	registry := management.NewRegistry()
 
 	managementHandler, err := management.NewHandler(
 		readiness,
@@ -338,14 +349,6 @@ func run(logger *slog.Logger) error {
 		managementServeErrors <- nil
 	}()
 
-	// 到这里已经完成启动门禁：
-	// - Serving Manifest / Bundle
-	// - PostgreSQL startup Ping
-	// - Triton serving contract verification
-	// - Kafka / Worker / Retry / DLQ / Runner 装配
-	// - management listener bind
-	//
-	// readiness 不主动执行 LightCurve 科学数据请求。
 	readiness.SetReady()
 
 	logger.InfoContext(
