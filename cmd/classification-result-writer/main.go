@@ -15,6 +15,7 @@ import (
 	kafkaadapter "github.com/ZChen470/variable-star-classification/internal/adapter/kafka"
 	postgresadapter "github.com/ZChen470/variable-star-classification/internal/adapter/postgres"
 	"github.com/ZChen470/variable-star-classification/internal/application"
+	"github.com/ZChen470/variable-star-classification/internal/observability/kafkametrics"
 	"github.com/ZChen470/variable-star-classification/internal/observability/logging"
 	"github.com/ZChen470/variable-star-classification/internal/observability/management"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -64,6 +65,16 @@ func run(logger *slog.Logger) error {
 	)
 	defer cancelRun()
 
+	registry := management.NewRegistry()
+
+	kafkaMetrics, err := kafkametrics.New(registry)
+	if err != nil {
+		return fmt.Errorf(
+			"create Kafka metrics hook: %w",
+			err,
+		)
+	}
+
 	pool, err := pgxpool.New(
 		runContext,
 		config.postgresDSN,
@@ -90,6 +101,7 @@ func run(logger *slog.Logger) error {
 		kgo.ConsumeTopics(config.classificationResultTopic),
 		kgo.DisableAutoCommit(),
 		kgo.BlockRebalanceOnPoll(),
+		kgo.WithHooks(kafkaMetrics),
 	)
 	if err != nil {
 		return fmt.Errorf(
@@ -141,7 +153,6 @@ func run(logger *slog.Logger) error {
 	}
 
 	readiness := management.NewReadiness()
-	registry := management.NewRegistry()
 
 	managementHandler, err := management.NewHandler(
 		readiness,
