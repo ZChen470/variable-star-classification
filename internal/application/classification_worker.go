@@ -3,36 +3,36 @@ package application
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"time"
 )
 
 // ClassificationWorkerHandler 编排一次 ClassificationCommand 的完整成功路径
 //
-// Command
+// # Command
 //
-//	→ 固定 Revision 输入准备
-//	→ Serving Bundle 解析
-//	→ 模型分类
-//	→ ClassificationRun 构造
-//	→ ClassificationResult 消息构造
-//	→ Result 发布
+// → 固定 Revision 输入准备
+// → Serving Bundle 解析
+// → 模型分类
+// → ClassificationRun 构造
+// → ClassificationResult 消息构造
+// → Result 发布
 //
 // 本 Handler：
-//   - 不直接写数据库；
-//   - 不自行提交 Kafka offset；
-//   - 不执行 Retry 或 DLQ；
-//   - 不对依赖错误进行永久/可重试分类；
-//   - 只有 Result 发布成功才返回 nil。
+// - 不直接写数据库；
+// - 不自行提交 Kafka offset；
+// - 不执行 Retry 或 DLQ；
+// - 不对依赖错误进行永久/可重试分类；
+// - 只有 Result 发布成功才返回 nil。
 type ClassificationWorkerHandler struct {
-	commandTopic string
-	resultTopic  string
-
+	commandTopic          string
+	resultTopic           string
 	inputPrepare          *ClassificationInputPreparer
 	servingBundleResolver ServingBundleResolver
 	classifier            VariableStarClassifier
 	publisher             MessagePublisher
-
-	now func() time.Time
+	now                   func() time.Time
+	logger                *slog.Logger
 }
 
 var _ MessageHandler = (*ClassificationWorkerHandler)(nil)
@@ -40,8 +40,8 @@ var _ MessageHandler = (*ClassificationWorkerHandler)(nil)
 // NewClassificationWorkerHandler 创建应用层 Classification Worker Handler
 //
 // now 由调用方注入：
-//   - 生产装配可传 time.Now:
-//   - 测试传固定时间函数，以保持 completed_at 和 消息字节确定
+// - 生产装配可传 time.Now:
+// - 测试传固定时间函数，以保持 completed_at 和 消息字节确定
 func NewClassificationWorkerHandler(
 	commandTopic string,
 	resultTopic string,
@@ -52,25 +52,39 @@ func NewClassificationWorkerHandler(
 	now func() time.Time,
 ) (*ClassificationWorkerHandler, error) {
 	if commandTopic == "" {
-		return nil, errors.New("classification command topic must not be empty")
+		return nil, errors.New(
+			"classification command topic must not be empty",
+		)
 	}
 	if resultTopic == "" {
-		return nil, errors.New("classification result topic must not be empty")
+		return nil, errors.New(
+			"classification result topic must not be empty",
+		)
 	}
 	if inputPrepare == nil {
-		return nil, errors.New("classification input preparer must not be nil")
+		return nil, errors.New(
+			"classification input preparer must not be nil",
+		)
 	}
 	if servingBundleResolver == nil {
-		return nil, errors.New("serving bundle resolver must not be nil")
+		return nil, errors.New(
+			"serving bundle resolver must not be nil",
+		)
 	}
 	if classifier == nil {
-		return nil, errors.New("variable star classifier must not be nil")
+		return nil, errors.New(
+			"variable star classifier must not be nil",
+		)
 	}
 	if publisher == nil {
-		return nil, errors.New("classification result publisher must not be nil")
+		return nil, errors.New(
+			"classification result publisher must not be nil",
+		)
 	}
 	if now == nil {
-		return nil, errors.New("classification worker clock must not be nil")
+		return nil, errors.New(
+			"classification worker clock must not be nil",
+		)
 	}
 
 	return &ClassificationWorkerHandler{
@@ -81,6 +95,7 @@ func NewClassificationWorkerHandler(
 		classifier:            classifier,
 		publisher:             publisher,
 		now:                   now,
+		logger:                slog.Default(),
 	}, nil
 }
 
@@ -88,46 +103,107 @@ func NewClassificationWorkerHandler(
 //
 // 返回 nil 后，外层 ConsumerRunner 才能提交原始 command offset
 // 任意步骤失败都会返回包装后的原始错误，且不会继续执行后续步骤
-func (handler *ClassificationWorkerHandler) Handle(ctx context.Context, message InboundMessage) error {
+func (handler *ClassificationWorkerHandler) Handle(
+	ctx context.Context,
+	message InboundMessage,
+) error {
 	if ctx == nil {
-		return errors.New("handle classification command: nil context")
+		return errors.New(
+			"handle classification command: nil context",
+		)
 	}
 	if handler == nil {
-		return errors.New("handle classification command: nil handler")
+		return errors.New(
+			"handle classification command: nil handler",
+		)
 	}
 	if err := ctx.Err(); err != nil {
 		return err
 	}
 
-	command, err := DecodeClassificationCommandMessage(handler.commandTopic, message)
-	if err != nil {
-		return WrapClassificationWorkerError(ClassificationWorkerOperationDecodeCommand, err)
+	logger := handler.logger
+	if logger == nil {
+		logger = slog.Default()
 	}
 
-	prepared, err := handler.inputPrepare.Prepare(ctx, ClassificationInputPreparationRequest{
-		ObjectID:                   command.ObjectID,
-		LightCurveRevision:         command.LightCurveRevision,
-		DeclaredEligibleEpochCount: command.DeclaredEligibleEpochCount,
-		ModelBundleVersion:         command.ModelBundleVersion,
-	})
+	command, err := DecodeClassificationCommandMessage(
+		handler.commandTopic,
+		message,
+	)
 	if err != nil {
-		return WrapClassificationWorkerError(ClassificationWorkerOperationPrepareInput, err)
+		return WrapClassificationWorkerError(
+			ClassificationWorkerOperationDecodeCommand,
+			err,
+		)
 	}
 
-	servingBundle, err := handler.servingBundleResolver.ResolveServingBundle(ctx, command.ModelBundleVersion)
+	logger.InfoContext(
+		ctx,
+		"classification command received",
+		"operation", "classification_command_received",
+		"job_id", string(command.JobID),
+		"object_id", command.ObjectID,
+		"candidate_revision", command.CandidateRevision,
+		"light_curve_revision", command.LightCurveRevision,
+		"model_bundle_version", command.ModelBundleVersion,
+		"trace_id", command.TraceContext.TraceID,
+		"correlation_id", command.TraceContext.CorrelationID,
+		"causation_id", command.TraceContext.CausationID,
+		"kafka_topic", message.Topic,
+		"kafka_partition", message.Partition,
+		"kafka_offset", message.Offset,
+	)
+
+	prepared, err := handler.inputPrepare.Prepare(
+		ctx,
+		ClassificationInputPreparationRequest{
+			ObjectID:                   command.ObjectID,
+			LightCurveRevision:         command.LightCurveRevision,
+			DeclaredEligibleEpochCount: command.DeclaredEligibleEpochCount,
+			ModelBundleVersion:         command.ModelBundleVersion,
+		},
+	)
 	if err != nil {
-		return WrapClassificationWorkerError(ClassificationWorkerOperationResolveBundle, err)
+		return WrapClassificationWorkerError(
+			ClassificationWorkerOperationPrepareInput,
+			err,
+		)
 	}
 
-	classificationContext := WithClassificationRequestID(ctx, string(command.JobID))
-	output, err := handler.classifier.Classify(classificationContext, prepared.Input)
+	servingBundle, err :=
+		handler.servingBundleResolver.ResolveServingBundle(
+			ctx,
+			command.ModelBundleVersion,
+		)
 	if err != nil {
-		return WrapClassificationWorkerError(ClassificationWorkerOperationClassify, err)
+		return WrapClassificationWorkerError(
+			ClassificationWorkerOperationResolveBundle,
+			err,
+		)
+	}
+
+	classificationContext := WithClassificationRequestID(
+		ctx,
+		string(command.JobID),
+	)
+
+	output, err := handler.classifier.Classify(
+		classificationContext,
+		prepared.Input,
+	)
+	if err != nil {
+		return WrapClassificationWorkerError(
+			ClassificationWorkerOperationClassify,
+			err,
+		)
 	}
 
 	// 推理完后，Context 已取消，不再生成或发布 Result
 	if err := classificationContext.Err(); err != nil {
-		return WrapClassificationWorkerError(ClassificationWorkerOperationClassify, err)
+		return WrapClassificationWorkerError(
+			ClassificationWorkerOperationClassify,
+			err,
+		)
 	}
 
 	run, err := BuildClassificationRun(
@@ -142,17 +218,52 @@ func (handler *ClassificationWorkerHandler) Handle(ctx context.Context, message 
 		},
 	)
 	if err != nil {
-		return WrapClassificationWorkerError(ClassificationWorkerOperationBuildRun, err)
+		return WrapClassificationWorkerError(
+			ClassificationWorkerOperationBuildRun,
+			err,
+		)
 	}
 
-	resultMessage, err := BuildClassificationResultMessage(handler.resultTopic, run, command.TraceContext, message.Headers)
+	resultMessage, err := BuildClassificationResultMessage(
+		handler.resultTopic,
+		run,
+		command.TraceContext,
+		message.Headers,
+	)
 	if err != nil {
-		return WrapClassificationWorkerError(ClassificationWorkerOperationBuildResult, err)
+		return WrapClassificationWorkerError(
+			ClassificationWorkerOperationBuildResult,
+			err,
+		)
 	}
 
-	if err = handler.publisher.Publish(ctx, resultMessage); err != nil {
-		return WrapClassificationWorkerError(ClassificationWorkerOperationPublishResult, err)
+	if err = handler.publisher.Publish(
+		ctx,
+		resultMessage,
+	); err != nil {
+		return WrapClassificationWorkerError(
+			ClassificationWorkerOperationPublishResult,
+			err,
+		)
 	}
+
+	logger.InfoContext(
+		ctx,
+		"classification result published",
+		"operation", "classification_result_publish",
+		"job_id", string(run.JobID),
+		"run_id", string(run.RunID),
+		"object_id", run.ObjectID,
+		"candidate_revision", run.CandidateRevision,
+		"light_curve_revision", run.LightCurveRevision,
+		"effective_epoch_count", run.EffectiveEpochCount,
+		"model_bundle_version", run.Versions.ModelBundleVersion,
+		"xgboost_executed", run.XGBoostExecuted,
+		"trace_id", command.TraceContext.TraceID,
+		"correlation_id", command.TraceContext.CorrelationID,
+		"causation_id", command.TraceContext.CausationID,
+		"kafka_topic", resultMessage.Topic,
+	)
 
 	return nil
 }
