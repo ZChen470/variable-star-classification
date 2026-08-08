@@ -19,6 +19,7 @@ import (
 	"github.com/ZChen470/variable-star-classification/internal/observability/logging"
 	"github.com/ZChen470/variable-star-classification/internal/observability/management"
 	"github.com/ZChen470/variable-star-classification/internal/observability/postgresmetrics"
+	"github.com/ZChen470/variable-star-classification/internal/observability/resultmetrics"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/twmb/franz-go/pkg/kgo"
 )
@@ -127,10 +128,21 @@ func run(logger *slog.Logger) error {
 	repository :=
 		postgresadapter.NewClassificationRepository(pool)
 
+	observedRepository, err := resultmetrics.NewSaver(
+		registry,
+		repository,
+	)
+	if err != nil {
+		return fmt.Errorf(
+			"create result persistence metrics: %w",
+			err,
+		)
+	}
+
 	writer, err :=
 		application.NewClassificationResultWriterHandler(
 			config.classificationResultTopic,
-			repository,
+			observedRepository,
 		)
 	if err != nil {
 		return fmt.Errorf(
