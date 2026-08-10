@@ -288,7 +288,7 @@ func run(logger *slog.Logger) error {
 		)
 	}
 
-	kafkaClient, err := kgo.NewClient(
+	kafkaOptions := []kgo.Opt{
 		kgo.SeedBrokers(config.kafkaBrokers...),
 		kgo.ClientID(config.kafkaClientID),
 		kgo.ConsumerGroup(config.kafkaConsumerGroup),
@@ -296,12 +296,23 @@ func run(logger *slog.Logger) error {
 		kgo.DisableAutoCommit(),
 		kgo.BlockRebalanceOnPoll(),
 		kgo.WithHooks(kafkaMetrics),
-	)
-	if err != nil {
-		return fmt.Errorf(
-			"create Kafka client: %w",
-			err,
+	}
+
+	if config.kafkaSASLUsername != "" {
+		mechanism, err := kafkaadapter.NewSCRAMSHA256Mechanism(
+			config.kafkaSASLUsername,
+			config.kafkaSASLPassword,
 		)
+		if err != nil {
+			return fmt.Errorf("create Kafka SASL mechanism: %w", err)
+		}
+
+		kafkaOptions = append(kafkaOptions, kgo.SASL(mechanism))
+	}
+
+	kafkaClient, err := kgo.NewClient(kafkaOptions...)
+	if err != nil {
+		return fmt.Errorf("create Kafka client: %w", err)
 	}
 	defer kafkaClient.CloseAllowingRebalance()
 

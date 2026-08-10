@@ -24,8 +24,12 @@ const (
 	envTritonBaseURL = "TRITON_BASE_URL"
 	envPostgresDSN   = "POSTGRES_DSN"
 
-	envLightCurveBaseURL        = "LIGHT_CURVE_BASE_URL"
-	envManagementListenAddr     = "MANAGEMENT_LISTEN_ADDR"
+	envLightCurveBaseURL    = "LIGHT_CURVE_BASE_URL"
+	envManagementListenAddr = "MANAGEMENT_LISTEN_ADDR"
+
+	envKafkaSASLUsername = "KAFKA_SASL_USERNAME"
+	envKafkaSASLPassword = "KAFKA_SASL_PASSWORD"
+
 	defaultManagementListenAddr = "127.0.0.1:9091"
 
 	defaultKafkaClientID = project.Name + "-classifier-worker"
@@ -48,6 +52,9 @@ type classifierWorkerConfig struct {
 
 	lightCurveBaseURL    string
 	managementListenAddr string
+
+	kafkaSASLUsername string
+	kafkaSASLPassword string
 }
 
 func loadClassifierWorkerConfig(
@@ -67,6 +74,11 @@ func loadClassifierWorkerConfig(
 	}
 
 	brokers, err := parseKafkaBrokers(rawBrokers)
+	if err != nil {
+		return classifierWorkerConfig{}, err
+	}
+
+	kafkaSASLUsername, kafkaSASLPassword, err := loadKafkaSASLCredentials(lookup)
 	if err != nil {
 		return classifierWorkerConfig{}, err
 	}
@@ -178,6 +190,9 @@ func loadClassifierWorkerConfig(
 
 		lightCurveBaseURL:    lightCurveBaseURL,
 		managementListenAddr: managementListenAddr,
+
+		kafkaSASLUsername: kafkaSASLUsername,
+		kafkaSASLPassword: kafkaSASLPassword,
 	}, nil
 }
 
@@ -247,4 +262,30 @@ func parseKafkaBrokers(
 	}
 
 	return brokers, nil
+}
+
+func loadKafkaSASLCredentials(lookup func(string) (string, bool)) (string, string, error) {
+	rawUsername, usernameSet := lookup(envKafkaSASLUsername)
+	rawPassword, passwordSet := lookup(envKafkaSASLPassword)
+
+	if !usernameSet && !passwordSet {
+		return "", "", nil
+	}
+
+	username := strings.TrimSpace(rawUsername)
+	if !usernameSet || username == "" {
+		return "", "", fmt.Errorf(
+			"environment variable %s must be set and non-blank when Kafka SASL is configured",
+			envKafkaSASLUsername,
+		)
+	}
+
+	if !passwordSet || strings.TrimSpace(rawPassword) == "" {
+		return "", "", fmt.Errorf(
+			"environment variable %s must be set and non-blank when Kafka SASL is configured",
+			envKafkaSASLPassword,
+		)
+	}
+
+	return username, rawPassword, nil
 }
