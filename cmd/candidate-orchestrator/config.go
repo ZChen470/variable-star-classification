@@ -18,6 +18,9 @@ const (
 	envModelBundleVersion         = "MODEL_BUNDLE_VERSION"
 	envManagementListenAddr       = "MANAGEMENT_LISTEN_ADDR"
 
+	envKafkaSASLUsername = "KAFKA_SASL_USERNAME"
+	envKafkaSASLPassword = "KAFKA_SASL_PASSWORD"
+
 	defaultKafkaClientID        = project.Name + "-candidate-orchestrator"
 	defaultManagementListenAddr = "127.0.0.1:9091"
 )
@@ -31,6 +34,8 @@ type candidateOrchestratorConfig struct {
 	candidateDLQTopic          string
 	modelBundleVersion         string
 	managementListenAddr       string
+	kafkaSASLUsername          string
+	kafkaSASLPassword          string
 }
 
 func loadCandidateOrchestratorConfig(
@@ -50,6 +55,11 @@ func loadCandidateOrchestratorConfig(
 	}
 
 	brokers, err := parseKafkaBrokers(rawBrokers)
+	if err != nil {
+		return candidateOrchestratorConfig{}, err
+	}
+
+	kafkaSASLUsername, kafkaSASLPassword, err := loadKafkaSASLCredentials(lookup)
 	if err != nil {
 		return candidateOrchestratorConfig{}, err
 	}
@@ -119,6 +129,8 @@ func loadCandidateOrchestratorConfig(
 		candidateDLQTopic:          dlqTopic,
 		modelBundleVersion:         modelBundleVersion,
 		managementListenAddr:       managementListenAddr,
+		kafkaSASLUsername:          kafkaSASLUsername,
+		kafkaSASLPassword:          kafkaSASLPassword,
 	}, nil
 }
 
@@ -178,4 +190,30 @@ func parseKafkaBrokers(raw string) ([]string, error) {
 	}
 
 	return brokers, nil
+}
+
+func loadKafkaSASLCredentials(lookup func(string) (string, bool)) (string, string, error) {
+	rawUsername, usernameSet := lookup(envKafkaSASLUsername)
+	rawPassword, passwordSet := lookup(envKafkaSASLPassword)
+
+	if !usernameSet && !passwordSet {
+		return "", "", nil
+	}
+
+	username := strings.TrimSpace(rawUsername)
+	if !usernameSet || username == "" {
+		return "", "", fmt.Errorf(
+			"environment variable %s must be set and non-blank when Kafka SASL is configured",
+			envKafkaSASLUsername,
+		)
+	}
+
+	if !passwordSet || strings.TrimSpace(rawPassword) == "" {
+		return "", "", fmt.Errorf(
+			"environment variable %s must be set and non-blank when Kafka SASL is configured",
+			envKafkaSASLPassword,
+		)
+	}
+
+	return username, rawPassword, nil
 }
