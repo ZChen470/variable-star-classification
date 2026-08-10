@@ -12,3 +12,5 @@ coverage.out
 # Operating system files
 .DS_Store
 Thumbs.db
+# Server runtime data and secrets
+runtime-data/

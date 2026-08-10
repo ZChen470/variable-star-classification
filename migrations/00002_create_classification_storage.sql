@@ -101,32 +101,6 @@ CREATE TABLE classification_runs (
             AND model_bundle_version = btrim(model_bundle_version)
         ),
 
-    CONSTRAINT classification_runs_taxonomy_version_check
-        CHECK (
-            taxonomy_version <> ''
-            AND taxonomy_version = btrim(taxonomy_version)
-        ),
-
-    CONSTRAINT classification_runs_preprocessing_version_check
-        CHECK (
-            preprocessing_version <> ''
-            AND preprocessing_version = btrim(preprocessing_version)
-        ),
-
-    CONSTRAINT classification_runs_feature_schema_version_check
-        CHECK (
-            feature_schema_version <> ''
-            AND feature_schema_version =
-                btrim(feature_schema_version)
-        ),
-
-    CONSTRAINT classification_runs_tensor_schema_version_check
-        CHECK (
-            tensor_schema_version <> ''
-            AND tensor_schema_version =
-                btrim(tensor_schema_version)
-        ),
-
     CONSTRAINT classification_runs_coarse_probabilities_shape_check
         CHECK (
             array_ndims(coarse_probabilities) = 1
