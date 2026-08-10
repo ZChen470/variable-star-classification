@@ -20,6 +20,9 @@ const (
 
 	envCandidateRatePerSecond = "CANDIDATE_RATE_PER_SECOND"
 
+	envKafkaSASLUsername = "KAFKA_SASL_USERNAME"
+	envKafkaSASLPassword = "KAFKA_SASL_PASSWORD"
+
 	defaultLightCurveMockListenAddr = "127.0.0.1:18081"
 	defaultCandidateRatePerSecond   = 1.0
 
@@ -35,6 +38,9 @@ type lightCurveMockConfig struct {
 	candidateTopic string
 
 	candidateRatePerSecond float64
+
+	kafkaSASLUsername string
+	kafkaSASLPassword string
 }
 
 func loadLightCurveMockConfig(
@@ -67,6 +73,11 @@ func loadLightCurveMockConfig(
 
 	kafkaBrokers, err :=
 		parseKafkaBrokers(rawBrokers)
+	if err != nil {
+		return lightCurveMockConfig{}, err
+	}
+
+	kafkaSASLUsername, kafkaSASLPassword, err := loadKafkaSASLCredentials(lookup)
 	if err != nil {
 		return lightCurveMockConfig{}, err
 	}
@@ -155,6 +166,9 @@ func loadLightCurveMockConfig(
 		candidateTopic: candidateTopic,
 
 		candidateRatePerSecond: candidateRatePerSecond,
+
+		kafkaSASLUsername: kafkaSASLUsername,
+		kafkaSASLPassword: kafkaSASLPassword,
 	}, nil
 }
 
@@ -217,4 +231,30 @@ func parseKafkaBrokers(
 	}
 
 	return brokers, nil
+}
+
+func loadKafkaSASLCredentials(lookup func(string) (string, bool)) (string, string, error) {
+	rawUsername, usernameSet := lookup(envKafkaSASLUsername)
+	rawPassword, passwordSet := lookup(envKafkaSASLPassword)
+
+	if !usernameSet && !passwordSet {
+		return "", "", nil
+	}
+
+	username := strings.TrimSpace(rawUsername)
+	if !usernameSet || username == "" {
+		return "", "", fmt.Errorf(
+			"environment variable %s must be set and non-blank when Kafka SASL is configured",
+			envKafkaSASLUsername,
+		)
+	}
+
+	if !passwordSet || strings.TrimSpace(rawPassword) == "" {
+		return "", "", fmt.Errorf(
+			"environment variable %s must be set and non-blank when Kafka SASL is configured",
+			envKafkaSASLPassword,
+		)
+	}
+
+	return username, rawPassword, nil
 }
