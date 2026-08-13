@@ -71,6 +71,13 @@ func (handler *ClassificationCommandRetryHandler) Handle(ctx context.Context, me
 		logger = slog.Default()
 	}
 
+	retrying := false
+	defer func() {
+		if retrying {
+			handler.observer.RetryFinished()
+		}
+	}()
+
 	for attempt := 1; ; attempt++ {
 		if attempt > 1 {
 			handler.observer.RetryAttempted()
@@ -86,6 +93,11 @@ func (handler *ClassificationCommandRetryHandler) Handle(ctx context.Context, me
 			workerError == nil ||
 			workerError.Class != ClassificationWorkerErrorClassRetryable {
 			return err
+		}
+
+		if !retrying {
+			handler.observer.RetryStarted()
+			retrying = true
 		}
 
 		delay := classificationCommandRetryDelay(handler.retryDelays, attempt-1)

@@ -3,6 +3,8 @@ package commandmetrics
 import (
 	"errors"
 	"fmt"
+	"sync"
+	"time"
 
 	"github.com/ZChen470/variable-star-classification/internal/application"
 	"github.com/prometheus/client_golang/prometheus"
@@ -15,17 +17,31 @@ import (
 // existing Kafka produce metric already observes successful/error production
 // for the configured DLQ topic.
 type Observer struct {
-	retryAttempts prometheus.Counter
+	mu             sync.RWMutex
+	now            func() time.Time
+	retrying       bool
+	retryStartedAt time.Time
+	retryAttempts  prometheus.Counter
+	retryingGauge  prometheus.GaugeFunc
+	retryAgeGauge  prometheus.GaugeFunc
 }
 
 var _ application.ClassificationCommandObserver = (*Observer)(nil)
 
 func New(registerer prometheus.Registerer) (*Observer, error) {
+	return newObserver(registerer, time.Now)
+}
+
+func newObserver(registerer prometheus.Registerer, now func() time.Time) (*Observer, error) {
 	if registerer == nil {
 		return nil, errors.New("classification command metrics registerer must not be nil")
 	}
+	if now == nil {
+		return nil, errors.New("classification command metrics clock must not be nil")
+	}
 
 	observer := &Observer{
+		now: now,
 		retryAttempts: prometheus.NewCounter(
 			prometheus.CounterOpts{
 				Namespace: "astro",
@@ -35,11 +51,54 @@ func New(registerer prometheus.Registerer) (*Observer, error) {
 			},
 		),
 	}
-	if err := registerer.Register(observer.retryAttempts); err != nil {
-		return nil, fmt.Errorf("register classification command metric: %w", err)
+
+	observer.retryingGauge = prometheus.NewGaugeFunc(
+		prometheus.GaugeOpts{
+			Namespace: "astro",
+			Subsystem: "classification_command",
+			Name:      "retrying",
+			Help:      "Whether this worker is currently retrying a ClassificationCommand.",
+		},
+		observer.retryingValue,
+	)
+
+	observer.retryAgeGauge = prometheus.NewGaugeFunc(
+		prometheus.GaugeOpts{
+			Namespace: "astro",
+			Subsystem: "classification_command",
+			Name:      "retry_age_seconds",
+			Help:      "Seconds since the current ClassificationCommand entered retry state, or zero when not retrying.",
+		},
+		observer.retryAgeSeconds,
+	)
+
+	for _, collector := range []prometheus.Collector{
+		observer.retryAttempts,
+		observer.retryingGauge,
+		observer.retryAgeGauge,
+	} {
+		if err := registerer.Register(collector); err != nil {
+			return nil, fmt.Errorf("register classification command metric: %w", err)
+		}
 	}
 
 	return observer, nil
+}
+
+func (observer *Observer) RetryStarted() {
+	if observer == nil {
+		return
+	}
+
+	observer.mu.Lock()
+	defer observer.mu.Unlock()
+
+	if observer.retrying {
+		return
+	}
+
+	observer.retrying = true
+	observer.retryStartedAt = observer.now()
 }
 
 func (observer *Observer) RetryAttempted() {
@@ -50,9 +109,48 @@ func (observer *Observer) RetryAttempted() {
 	observer.retryAttempts.Inc()
 }
 
+func (observer *Observer) RetryFinished() {
+	if observer == nil {
+		return
+	}
+
+	observer.mu.Lock()
+	defer observer.mu.Unlock()
+
+	observer.retrying = false
+	observer.retryStartedAt = time.Time{}
+}
+
 func (*Observer) DLQPublished() {
 	// Intentionally no metric.
 	//
 	// Successful Command DLQ publication is already visible through
 	// astro_kafka_produce_records_total for the configured DLQ topic.
+}
+
+func (observer *Observer) retryingValue() float64 {
+	observer.mu.RLock()
+	defer observer.mu.RUnlock()
+
+	if observer.retrying {
+		return 1
+	}
+
+	return 0
+}
+
+func (observer *Observer) retryAgeSeconds() float64 {
+	observer.mu.RLock()
+	defer observer.mu.RUnlock()
+
+	if !observer.retrying || observer.retryStartedAt.IsZero() {
+		return 0
+	}
+
+	age := observer.now().Sub(observer.retryStartedAt).Seconds()
+	if age < 0 {
+		return 0
+	}
+
+	return age
 }

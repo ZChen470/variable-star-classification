@@ -5,13 +5,17 @@ package application
 //
 // Implementations must not change command processing behavior.
 type ClassificationCommandObserver interface {
+	RetryStarted()
 	RetryAttempted()
+	RetryFinished()
 	DLQPublished()
 }
 
 type noopClassificationCommandObserver struct{}
 
+func (noopClassificationCommandObserver) RetryStarted()   {}
 func (noopClassificationCommandObserver) RetryAttempted() {}
+func (noopClassificationCommandObserver) RetryFinished()  {}
 func (noopClassificationCommandObserver) DLQPublished()   {}
 
 func classificationCommandObserverOrNoop(observer ClassificationCommandObserver) ClassificationCommandObserver {

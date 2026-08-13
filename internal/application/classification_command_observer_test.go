@@ -45,6 +45,15 @@ func TestClassificationCommandObserverRecordsRetryAttemptsBeyondConfiguredSchedu
 	if next.calls != 4 {
 		t.Fatalf("handler calls = %d, want 4", next.calls)
 	}
+	if observer.retryStarted != 1 {
+		t.Fatalf("retry started = %d, want 1", observer.retryStarted)
+	}
+	if observer.retryAttempted != 3 {
+		t.Fatalf("retry attempted = %d, want 3", observer.retryAttempted)
+	}
+	if observer.retryFinished != 1 {
+		t.Fatalf("retry finished = %d, want 1", observer.retryFinished)
+	}
 }
 
 func TestClassificationCommandObserverRecordsSuccessfulDLQ(t *testing.T) {
@@ -81,12 +90,22 @@ func TestClassificationCommandObserverRecordsSuccessfulDLQ(t *testing.T) {
 }
 
 type classificationCommandObserverTestObserver struct {
+	retryStarted   int
 	retryAttempted int
+	retryFinished  int
 	dlqPublished   int
+}
+
+func (observer *classificationCommandObserverTestObserver) RetryStarted() {
+	observer.retryStarted++
 }
 
 func (observer *classificationCommandObserverTestObserver) RetryAttempted() {
 	observer.retryAttempted++
+}
+
+func (observer *classificationCommandObserverTestObserver) RetryFinished() {
+	observer.retryFinished++
 }
 
 func (observer *classificationCommandObserverTestObserver) DLQPublished() {
