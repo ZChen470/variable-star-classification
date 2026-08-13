@@ -298,6 +298,8 @@ func run(logger *slog.Logger) error {
 		)
 	}
 
+	rebalanceYield := kafkaadapter.NewRebalanceYield()
+
 	kafkaOptions := []kgo.Opt{
 		kgo.SeedBrokers(config.kafkaBrokers...),
 		kgo.ClientID(config.kafkaClientID),
@@ -305,7 +307,10 @@ func run(logger *slog.Logger) error {
 		kgo.ConsumeTopics(config.classificationCommandTopic),
 		kgo.DisableAutoCommit(),
 		kgo.BlockRebalanceOnPoll(),
-		kgo.OnPartitionsCallbackBlocked(rebalanceMetrics.OnPartitionsCallbackBlocked),
+		kgo.OnPartitionsCallbackBlocked(func(ctx context.Context, client *kgo.Client) {
+			rebalanceMetrics.OnPartitionsCallbackBlocked(ctx, client)
+			rebalanceYield.Request()
+		}),
 		kgo.WithHooks(kafkaMetrics),
 	}
 
@@ -361,9 +366,10 @@ func run(logger *slog.Logger) error {
 		)
 	}
 
-	runner, err := kafkaadapter.NewConsumerRunner(
+	runner, err := kafkaadapter.NewRebalanceYieldConsumerRunner(
 		kafkaClient,
 		handler,
+		rebalanceYield,
 	)
 	if err != nil {
 		return fmt.Errorf(
