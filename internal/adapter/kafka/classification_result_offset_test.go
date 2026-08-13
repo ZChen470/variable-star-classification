@@ -145,16 +145,15 @@ func TestClassificationResultPublishSuccessCommitsCommandOffset(
 // TestClassificationResultPublishFailureDoesNotCommitCommandOffset 冻结：
 //
 //	Result Publish 持续失败
-//	→ Worker 返回 RETRYABLE
-//	→ 有限快速重试耗尽
-//	→ Command Handler 返回 error
+//	→ Worker 持续返回 RETRYABLE
+//	→ Command Handler 持续重试且不进入 DLQ
+//	→ Context 取消后停止处理
 //	→ ConsumerRunner 不提交 Command Offset
-func TestClassificationResultPublishFailureDoesNotCommitCommandOffset(
-	t *testing.T,
-) {
-	publishCause := errors.New(
-		"classification result Kafka unavailable",
-	)
+func TestClassificationResultPublishFailureDoesNotCommitCommandOffset(t *testing.T) {
+	publishCause := errors.New("classification result Kafka unavailable")
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 
 	record := &kgo.Record{
 		Topic:     offsetSemanticsCommandTopic,
@@ -170,91 +169,39 @@ func TestClassificationResultPublishFailureDoesNotCommitCommandOffset(
 		},
 	}
 
-	resultPublisher :=
-		&classificationOffsetTestPublisher{
-			err: publishCause,
-		}
+	resultPublisher := &classificationOffsetTestPublisher{
+		err:              publishCause,
+		cancel:           cancel,
+		cancelAfterCalls: 3,
+	}
 
-	worker :=
-		&classificationResultPublishBoundaryHandler{
-			publisher: resultPublisher,
-		}
+	worker := &classificationResultPublishBoundaryHandler{
+		publisher: resultPublisher,
+	}
 
-	dlqPublisher :=
-		&classificationOffsetTestPublisher{}
-
-	handler, err :=
-		application.NewClassificationCommandHandler(
-			worker,
-			[]time.Duration{0, 0},
-			offsetSemanticsCommandDLQTopic,
-			dlqPublisher,
-		)
+	dlqPublisher := &classificationOffsetTestPublisher{}
+	handler, err := application.NewClassificationCommandHandler(
+		worker,
+		[]time.Duration{0, 0},
+		offsetSemanticsCommandDLQTopic,
+		dlqPublisher,
+	)
 	if err != nil {
-		t.Fatalf(
-			"NewClassificationCommandHandler() error = %v",
-			err,
-		)
+		t.Fatalf("NewClassificationCommandHandler() error = %v", err)
 	}
 
-	runner := newConsumerRunner(
-		consumer,
-		handler,
-	)
+	runner := newConsumerRunner(consumer, handler)
 
-	got := runner.Run(
-		context.Background(),
-	)
-
-	if !errors.Is(got, publishCause) {
-		t.Fatalf(
-			"ConsumerRunner.Run() error = %v, want cause %v",
-			got,
-			publishCause,
-		)
+	if err := runner.Run(ctx); err != nil {
+		t.Fatalf("ConsumerRunner.Run() error = %v, want nil on context cancellation", err)
 	}
 
-	var workerError *application.ClassificationWorkerError
-
-	if !errors.As(got, &workerError) {
-		t.Fatalf(
-			"ConsumerRunner.Run() error = %v, want ClassificationWorkerError",
-			got,
-		)
+	if !errors.Is(ctx.Err(), context.Canceled) {
+		t.Fatalf("context error = %v, want context.Canceled", ctx.Err())
 	}
 
-	if workerError.Class !=
-		application.ClassificationWorkerErrorClassRetryable {
-		t.Fatalf(
-			"worker error class = %s, want RETRYABLE",
-			workerError.Class,
-		)
-	}
-
-	if workerError.Code !=
-		application.ClassificationWorkerErrorCodePublishFailed {
-		t.Fatalf(
-			"worker error code = %q, want %q",
-			workerError.Code,
-			application.ClassificationWorkerErrorCodePublishFailed,
-		)
-	}
-
-	if workerError.Operation !=
-		application.ClassificationWorkerOperationPublishResult {
-		t.Fatalf(
-			"worker error operation = %q, want %q",
-			workerError.Operation,
-			application.ClassificationWorkerOperationPublishResult,
-		)
-	}
-
-	// 两个 retry delay 表示最多三次总尝试。
 	if worker.calls != 3 {
-		t.Fatalf(
-			"worker call count = %d, want 3",
-			worker.calls,
-		)
+		t.Fatalf("worker call count = %d, want 3", worker.calls)
 	}
 
 	if len(resultPublisher.messages) != 3 {
@@ -328,20 +275,23 @@ func (
 }
 
 type classificationOffsetTestPublisher struct {
-	err      error
-	messages []application.OutboundMessage
+	err              error
+	messages         []application.OutboundMessage
+	cancel           context.CancelFunc
+	cancelAfterCalls int
 }
 
-func (
-	publisher *classificationOffsetTestPublisher,
-) Publish(
+func (publisher *classificationOffsetTestPublisher) Publish(
 	_ context.Context,
 	message application.OutboundMessage,
 ) error {
-	publisher.messages = append(
-		publisher.messages,
-		message,
-	)
+	publisher.messages = append(publisher.messages, message)
+
+	if publisher.cancel != nil &&
+		publisher.cancelAfterCalls > 0 &&
+		len(publisher.messages) == publisher.cancelAfterCalls {
+		publisher.cancel()
+	}
 
 	return publisher.err
 }

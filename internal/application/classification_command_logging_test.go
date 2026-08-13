@@ -11,9 +11,7 @@ import (
 	"time"
 )
 
-func TestClassificationCommandRetryHandlerWritesStructuredLogs(
-	t *testing.T,
-) {
+func TestClassificationCommandRetryHandlerWritesStructuredLogs(t *testing.T) {
 	var output bytes.Buffer
 
 	const (
@@ -32,7 +30,7 @@ func TestClassificationCommandRetryHandlerWritesStructuredLogs(
 	next := &classificationCommandLoggingHandler{
 		results: []error{
 			retryError,
-			retryError,
+			nil,
 		},
 	}
 
@@ -41,15 +39,10 @@ func TestClassificationCommandRetryHandlerWritesStructuredLogs(
 		[]time.Duration{0},
 	)
 	if err != nil {
-		t.Fatalf(
-			"NewClassificationCommandRetryHandler() error = %v",
-			err,
-		)
+		t.Fatalf("NewClassificationCommandRetryHandler() error = %v", err)
 	}
 
-	handler.logger = slog.New(
-		slog.NewJSONHandler(&output, nil),
-	)
+	handler.logger = slog.New(slog.NewJSONHandler(&output, nil))
 
 	message := InboundMessage{
 		Topic:     "astro.classification.commands.v1",
@@ -65,22 +58,11 @@ func TestClassificationCommandRetryHandlerWritesStructuredLogs(
 		},
 	}
 
-	got := handler.Handle(
-		context.Background(),
-		message,
-	)
-	if got != retryError {
-		t.Fatalf(
-			"Handle() error = %v, want retry error %v",
-			got,
-			retryError,
-		)
+	if err := handler.Handle(context.Background(), message); err != nil {
+		t.Fatalf("Handle() error = %v", err)
 	}
 
-	records := decodeClassificationCommandLogRecords(
-		t,
-		output.Bytes(),
-	)
+	records := decodeClassificationCommandLogRecords(t, output.Bytes())
 
 	scheduled := classificationCommandLogRecordByOperation(
 		t,
@@ -89,10 +71,7 @@ func TestClassificationCommandRetryHandlerWritesStructuredLogs(
 	)
 
 	if scheduled["attempt"] != float64(1) {
-		t.Fatalf(
-			"scheduled attempt = %#v, want 1",
-			scheduled["attempt"],
-		)
+		t.Fatalf("scheduled attempt = %#v, want 1", scheduled["attempt"])
 	}
 	if scheduled["next_attempt"] != float64(2) {
 		t.Fatalf(
@@ -100,18 +79,14 @@ func TestClassificationCommandRetryHandlerWritesStructuredLogs(
 			scheduled["next_attempt"],
 		)
 	}
-	if scheduled["max_attempts"] != float64(2) {
+	if scheduled["retry_delay_ms"] != float64(0) {
 		t.Fatalf(
-			"scheduled max_attempts = %#v, want 2",
-			scheduled["max_attempts"],
+			"scheduled retry_delay_ms = %#v, want 0",
+			scheduled["retry_delay_ms"],
 		)
 	}
-	if scheduled["error_code"] !=
-		string(ClassificationWorkerErrorCodeDependencyUnavailable) {
-		t.Fatalf(
-			"scheduled error_code = %#v",
-			scheduled["error_code"],
-		)
+	if scheduled["error_code"] != string(ClassificationWorkerErrorCodeDependencyUnavailable) {
+		t.Fatalf("scheduled error_code = %#v", scheduled["error_code"])
 	}
 	if scheduled["error_class"] != "RETRYABLE" {
 		t.Fatalf(
@@ -119,54 +94,45 @@ func TestClassificationCommandRetryHandlerWritesStructuredLogs(
 			scheduled["error_class"],
 		)
 	}
-	if scheduled["worker_operation"] !=
-		string(ClassificationWorkerOperationClassify) {
+	if scheduled["worker_operation"] != string(ClassificationWorkerOperationClassify) {
 		t.Fatalf(
 			"scheduled worker_operation = %#v",
 			scheduled["worker_operation"],
 		)
 	}
-
-	exhausted := classificationCommandLogRecordByOperation(
-		t,
-		records,
-		"classification_command_retry_exhausted",
-	)
-
-	if exhausted["attempt"] != float64(2) {
+	if scheduled["kafka_topic"] != message.Topic {
 		t.Fatalf(
-			"exhausted attempt = %#v, want 2",
-			exhausted["attempt"],
-		)
-	}
-	if exhausted["max_attempts"] != float64(2) {
-		t.Fatalf(
-			"exhausted max_attempts = %#v, want 2",
-			exhausted["max_attempts"],
-		)
-	}
-	if exhausted["kafka_topic"] != message.Topic {
-		t.Fatalf(
-			"exhausted kafka_topic = %#v, want %q",
-			exhausted["kafka_topic"],
+			"scheduled kafka_topic = %#v, want %q",
+			scheduled["kafka_topic"],
 			message.Topic,
 		)
 	}
-	if exhausted["kafka_partition"] !=
-		float64(message.Partition) {
+	if scheduled["kafka_partition"] != float64(message.Partition) {
 		t.Fatalf(
-			"exhausted kafka_partition = %#v, want %d",
-			exhausted["kafka_partition"],
+			"scheduled kafka_partition = %#v, want %d",
+			scheduled["kafka_partition"],
 			message.Partition,
 		)
 	}
-	if exhausted["kafka_offset"] !=
-		float64(message.Offset) {
+	if scheduled["kafka_offset"] != float64(message.Offset) {
 		t.Fatalf(
-			"exhausted kafka_offset = %#v, want %d",
-			exhausted["kafka_offset"],
+			"scheduled kafka_offset = %#v, want %d",
+			scheduled["kafka_offset"],
 			message.Offset,
 		)
+	}
+
+	if _, exists := scheduled["max_attempts"]; exists {
+		t.Fatalf(
+			"scheduled log unexpectedly contains max_attempts = %#v",
+			scheduled["max_attempts"],
+		)
+	}
+
+	for _, record := range records {
+		if record["operation"] == "classification_command_retry_exhausted" {
+			t.Fatal("structured logs unexpectedly contain retry exhaustion")
+		}
 	}
 
 	assertClassificationCommandLogsDoNotContain(

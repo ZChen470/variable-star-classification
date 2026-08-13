@@ -6,21 +6,15 @@ package application
 // Implementations must not change command processing behavior.
 type ClassificationCommandObserver interface {
 	RetryAttempted()
-	RetryExhausted()
 	DLQPublished()
 }
 
 type noopClassificationCommandObserver struct{}
 
 func (noopClassificationCommandObserver) RetryAttempted() {}
+func (noopClassificationCommandObserver) DLQPublished()   {}
 
-func (noopClassificationCommandObserver) RetryExhausted() {}
-
-func (noopClassificationCommandObserver) DLQPublished() {}
-
-func classificationCommandObserverOrNoop(
-	observer ClassificationCommandObserver,
-) ClassificationCommandObserver {
+func classificationCommandObserverOrNoop(observer ClassificationCommandObserver) ClassificationCommandObserver {
 	if observer == nil {
 		return noopClassificationCommandObserver{}
 	}

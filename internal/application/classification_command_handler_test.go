@@ -224,61 +224,42 @@ func TestClassificationCommandHandlerRoutesPermanentErrorAfterRetryToDLQ(
 	}
 }
 
-func TestClassificationCommandHandlerReturnsRetryableAfterExhaustion(
-	t *testing.T,
-) {
-	firstError := newCommandHandlerRetryableError(
+func TestClassificationCommandHandlerKeepsRetryableCommandOutOfDLQUntilSuccess(t *testing.T) {
+	retryableError := newCommandHandlerRetryableError(
 		application.ClassificationWorkerOperationPrepareInput,
-	)
-
-	secondError := newCommandHandlerRetryableError(
-		application.ClassificationWorkerOperationClassify,
-	)
-
-	lastError := newCommandHandlerRetryableError(
-		application.ClassificationWorkerOperationPublishResult,
 	)
 
 	worker := &classificationCommandHandlerTestWorker{
 		results: []error{
-			firstError,
-			secondError,
-			lastError,
+			retryableError,
+			retryableError,
+			retryableError,
+			retryableError,
+			nil,
 		},
 	}
 
-	dlqPublisher :=
-		&classificationCommandHandlerTestPublisher{}
+	dlqPublisher := &classificationCommandHandlerTestPublisher{}
 
-	handler, err :=
-		application.NewClassificationCommandHandler(
-			worker,
-			[]time.Duration{0, 0},
-			"astro.classification.commands.dlq.v1",
-			dlqPublisher,
-		)
+	handler, err := application.NewClassificationCommandHandler(
+		worker,
+		[]time.Duration{0, 0},
+		"astro.classification.commands.dlq.v1",
+		dlqPublisher,
+	)
 	if err != nil {
 		t.Fatalf("constructor error = %v", err)
 	}
 
-	got := handler.Handle(
+	if err := handler.Handle(
 		context.Background(),
 		application.InboundMessage{},
-	)
-
-	if got != lastError {
-		t.Fatalf(
-			"Handle() error = %v, want last retryable error %v",
-			got,
-			lastError,
-		)
+	); err != nil {
+		t.Fatalf("Handle() error = %v", err)
 	}
 
-	if worker.calls != 3 {
-		t.Fatalf(
-			"worker call count = %d, want 3",
-			worker.calls,
-		)
+	if worker.calls != 5 {
+		t.Fatalf("worker call count = %d, want 5", worker.calls)
 	}
 
 	if len(dlqPublisher.messages) != 0 {

@@ -15,19 +15,14 @@ import (
 // existing Kafka produce metric already observes successful/error production
 // for the configured DLQ topic.
 type Observer struct {
-	retryAttempts  prometheus.Counter
-	retryExhausted prometheus.Counter
+	retryAttempts prometheus.Counter
 }
 
 var _ application.ClassificationCommandObserver = (*Observer)(nil)
 
-func New(
-	registerer prometheus.Registerer,
-) (*Observer, error) {
+func New(registerer prometheus.Registerer) (*Observer, error) {
 	if registerer == nil {
-		return nil, errors.New(
-			"classification command metrics registerer must not be nil",
-		)
+		return nil, errors.New("classification command metrics registerer must not be nil")
 	}
 
 	observer := &Observer{
@@ -39,27 +34,9 @@ func New(
 				Help:      "Number of additional ClassificationCommand retry attempts actually executed.",
 			},
 		),
-
-		retryExhausted: prometheus.NewCounter(
-			prometheus.CounterOpts{
-				Namespace: "astro",
-				Subsystem: "classification_command",
-				Name:      "retry_exhausted_total",
-				Help:      "Number of ClassificationCommands that exhausted the finite retry budget.",
-			},
-		),
 	}
-
-	for _, collector := range []prometheus.Collector{
-		observer.retryAttempts,
-		observer.retryExhausted,
-	} {
-		if err := registerer.Register(collector); err != nil {
-			return nil, fmt.Errorf(
-				"register classification command metric: %w",
-				err,
-			)
-		}
+	if err := registerer.Register(observer.retryAttempts); err != nil {
+		return nil, fmt.Errorf("register classification command metric: %w", err)
 	}
 
 	return observer, nil
@@ -71,14 +48,6 @@ func (observer *Observer) RetryAttempted() {
 	}
 
 	observer.retryAttempts.Inc()
-}
-
-func (observer *Observer) RetryExhausted() {
-	if observer == nil {
-		return
-	}
-
-	observer.retryExhausted.Inc()
 }
 
 func (*Observer) DLQPublished() {

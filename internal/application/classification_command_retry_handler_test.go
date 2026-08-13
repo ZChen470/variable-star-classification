@@ -114,59 +114,38 @@ func TestClassificationCommandRetryHandlerRetriesUntilSuccess(
 	}
 }
 
-func TestClassificationCommandRetryHandlerReturnsLastErrorAfterExhaustion(
-	t *testing.T,
-) {
-	firstError := retryableClassificationWorkerError(
+func TestClassificationCommandRetryHandlerContinuesBeyondConfiguredBackoffScheduleUntilSuccess(t *testing.T) {
+	retryableError := retryableClassificationWorkerError(
 		application.ClassificationWorkerOperationPrepareInput,
-	)
-
-	secondError := retryableClassificationWorkerError(
-		application.ClassificationWorkerOperationClassify,
-	)
-
-	lastError := retryableClassificationWorkerError(
-		application.ClassificationWorkerOperationPublishResult,
 	)
 
 	next := &classificationCommandRetryTestHandler{
 		results: []error{
-			firstError,
-			secondError,
-			lastError,
+			retryableError,
+			retryableError,
+			retryableError,
+			retryableError,
+			nil,
 		},
 	}
 
-	handler, err :=
-		application.NewClassificationCommandRetryHandler(
-			next,
-			[]time.Duration{0, 0},
-		)
+	handler, err := application.NewClassificationCommandRetryHandler(
+		next,
+		[]time.Duration{0, 0},
+	)
 	if err != nil {
-		t.Fatalf(
-			"NewClassificationCommandRetryHandler() error = %v",
-			err,
-		)
+		t.Fatalf("NewClassificationCommandRetryHandler() error = %v", err)
 	}
 
-	got := handler.Handle(
+	if err := handler.Handle(
 		context.Background(),
 		application.InboundMessage{},
-	)
-
-	if got != lastError {
-		t.Fatalf(
-			"Handle() error = %v, want last error %v",
-			got,
-			lastError,
-		)
+	); err != nil {
+		t.Fatalf("Handle() error = %v", err)
 	}
 
-	if next.calls != 3 {
-		t.Fatalf(
-			"worker call count = %d, want 3",
-			next.calls,
-		)
+	if next.calls != 5 {
+		t.Fatalf("worker call count = %d, want 5", next.calls)
 	}
 }
 

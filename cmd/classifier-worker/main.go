@@ -38,7 +38,13 @@ const (
 
 var classificationRetryDelays = []time.Duration{
 	100 * time.Millisecond,
-	300 * time.Millisecond,
+	200 * time.Millisecond,
+	400 * time.Millisecond,
+	800 * time.Millisecond,
+	1600 * time.Millisecond,
+	3200 * time.Millisecond,
+	6400 * time.Millisecond,
+	10 * time.Second,
 }
 
 func main() {
