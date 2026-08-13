@@ -93,6 +93,10 @@ func run(logger *slog.Logger) error {
 			err,
 		)
 	}
+	rebalanceMetrics, err := kafkametrics.NewRebalanceObserver(registry)
+	if err != nil {
+		return fmt.Errorf("create Kafka rebalance metrics: %w", err)
+	}
 
 	httpMetrics, err := httpmetrics.New(registry)
 	if err != nil {
@@ -301,6 +305,7 @@ func run(logger *slog.Logger) error {
 		kgo.ConsumeTopics(config.classificationCommandTopic),
 		kgo.DisableAutoCommit(),
 		kgo.BlockRebalanceOnPoll(),
+		kgo.OnPartitionsCallbackBlocked(rebalanceMetrics.OnPartitionsCallbackBlocked),
 		kgo.WithHooks(kafkaMetrics),
 	}
 
