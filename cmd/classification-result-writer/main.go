@@ -32,6 +32,17 @@ const (
 	classificationRunPersistenceTimeout = 10 * time.Second
 )
 
+var classificationResultRetryDelays = []time.Duration{
+	100 * time.Millisecond,
+	200 * time.Millisecond,
+	400 * time.Millisecond,
+	800 * time.Millisecond,
+	1600 * time.Millisecond,
+	3200 * time.Millisecond,
+	6400 * time.Millisecond,
+	10 * time.Second,
+}
+
 func main() {
 	logger := logging.NewJSON(os.Stderr, serviceName)
 	slog.SetDefault(logger)
@@ -79,6 +90,14 @@ func run(logger *slog.Logger) error {
 		)
 	}
 
+	rebalanceMetrics, err := kafkametrics.NewRebalanceObserver(registry)
+	if err != nil {
+		return fmt.Errorf(
+			"create Kafka rebalance metrics: %w",
+			err,
+		)
+	}
+
 	pool, err := pgxpool.New(
 		runContext,
 		config.postgresDSN,
@@ -108,13 +127,9 @@ func run(logger *slog.Logger) error {
 		)
 	}
 
-	kafkaOptions := []kgo.Opt{
+	kafkaCommonOptions := []kgo.Opt{
 		kgo.SeedBrokers(config.kafkaBrokers...),
 		kgo.ClientID(config.kafkaClientID),
-		kgo.ConsumerGroup(config.kafkaConsumerGroup),
-		kgo.ConsumeTopics(config.classificationResultTopic),
-		kgo.DisableAutoCommit(),
-		kgo.BlockRebalanceOnPoll(),
 		kgo.WithHooks(kafkaMetrics),
 	}
 
@@ -124,19 +139,28 @@ func run(logger *slog.Logger) error {
 			config.kafkaSASLPassword,
 		)
 		if err != nil {
-			return fmt.Errorf("create Kafka SASL mechanism: %w", err)
+			return fmt.Errorf(
+				"create Kafka SASL mechanism: %w",
+				err,
+			)
 		}
 
-		kafkaOptions = append(kafkaOptions, kgo.SASL(mechanism))
+		kafkaCommonOptions = append(
+			kafkaCommonOptions,
+			kgo.SASL(mechanism),
+		)
 	}
 
-	kafkaClient, err := kgo.NewClient(kafkaOptions...)
+	producerClient, err := kgo.NewClient(kafkaCommonOptions...)
 	if err != nil {
-		return fmt.Errorf("create Kafka client: %w", err)
+		return fmt.Errorf(
+			"create Kafka producer client: %w",
+			err,
+		)
 	}
-	defer kafkaClient.CloseAllowingRebalance()
+	defer producerClient.Close()
 
-	publisher := kafkaadapter.NewPublisher(kafkaClient)
+	publisher := kafkaadapter.NewPublisher(producerClient)
 
 	repository :=
 		postgresadapter.NewClassificationRepository(pool)
@@ -176,9 +200,21 @@ func run(logger *slog.Logger) error {
 		)
 	}
 
+	retryHandler, err :=
+		application.NewClassificationResultRetryHandler(
+			writer,
+			classificationResultRetryDelays,
+		)
+	if err != nil {
+		return fmt.Errorf(
+			"create classification result retry handler: %w",
+			err,
+		)
+	}
+
 	handler, err :=
 		application.NewClassificationResultDLQHandler(
-			writer,
+			retryHandler,
 			config.classificationResultDLQTopic,
 			publisher,
 		)
@@ -189,16 +225,71 @@ func run(logger *slog.Logger) error {
 		)
 	}
 
-	runner, err := kafkaadapter.NewConsumerRunner(
-		kafkaClient,
-		handler,
-	)
-	if err != nil {
-		return fmt.Errorf(
-			"create Kafka consumer runner: %w",
-			err,
+	newConsumerSession := func() (
+		*kgo.Client,
+		*kafkaadapter.RebalanceYieldConsumerRunner,
+		error,
+	) {
+		rebalanceYield := kafkaadapter.NewRebalanceYield()
+
+		consumerOptions := append(
+			[]kgo.Opt(nil),
+			kafkaCommonOptions...,
 		)
+
+		consumerOptions = append(
+			consumerOptions,
+			kgo.ConsumerGroup(config.kafkaConsumerGroup),
+			kgo.ConsumeTopics(config.classificationResultTopic),
+			kgo.DisableAutoCommit(),
+			kgo.BlockRebalanceOnPoll(),
+			kgo.OnPartitionsCallbackBlocked(
+				func(ctx context.Context, client *kgo.Client) {
+					rebalanceMetrics.OnPartitionsCallbackBlocked(
+						ctx,
+						client,
+					)
+					rebalanceYield.Request()
+				},
+			),
+		)
+
+		consumerClient, err := kgo.NewClient(consumerOptions...)
+		if err != nil {
+			return nil, nil, fmt.Errorf(
+				"create Kafka consumer client: %w",
+				err,
+			)
+		}
+
+		runner, err :=
+			kafkaadapter.NewRebalanceYieldConsumerRunner(
+				consumerClient,
+				handler,
+				rebalanceYield,
+			)
+		if err != nil {
+			consumerClient.CloseAllowingRebalance()
+
+			return nil, nil, fmt.Errorf(
+				"create Kafka consumer runner: %w",
+				err,
+			)
+		}
+
+		return consumerClient, runner, nil
 	}
+
+	consumerClient, runner, err := newConsumerSession()
+	if err != nil {
+		return err
+	}
+
+	defer func() {
+		if consumerClient != nil {
+			consumerClient.CloseAllowingRebalance()
+		}
+	}()
 
 	readiness := management.NewReadiness()
 
@@ -273,7 +364,38 @@ func run(logger *slog.Logger) error {
 		config.managementListenAddr,
 	)
 
-	runnerErr := runner.Run(runContext)
+	var runnerErr error
+
+	for {
+		runnerErr = runner.Run(runContext)
+
+		consumerClient.CloseAllowingRebalance()
+		consumerClient = nil
+
+		if !errors.Is(
+			runnerErr,
+			kafkaadapter.ErrRebalanceYielded,
+		) {
+			break
+		}
+
+		if runContext.Err() != nil {
+			runnerErr = nil
+			break
+		}
+
+		logger.InfoContext(
+			runContext,
+			"Kafka consumer session yielded",
+			"operation", "kafka_consumer_session_yielded",
+		)
+
+		consumerClient, runner, err = newConsumerSession()
+		if err != nil {
+			runnerErr = err
+			break
+		}
+	}
 
 	readiness.SetNotReady()
 	cancelRun()
