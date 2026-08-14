@@ -28,11 +28,7 @@ func TestRebalanceYieldConsumerRunnerProcessesCommitsAndAllowsRebalance(t *testi
 	handler := &rebalanceYieldTestHandler{}
 	yield := NewRebalanceYield()
 
-	runner := newRebalanceYieldConsumerRunner(
-		consumer,
-		handler,
-		yield,
-	)
+	runner := newRebalanceYieldConsumerRunner(consumer, handler, yield)
 
 	if err := runner.Run(ctx); err != nil {
 		t.Fatalf("Run() error = %v", err)
@@ -48,32 +44,32 @@ func TestRebalanceYieldConsumerRunnerProcessesCommitsAndAllowsRebalance(t *testi
 		t.Fatal("committed record does not match polled record")
 	}
 	if consumer.allowRebalanceCalls != 1 {
-		t.Fatalf(
-			"AllowRebalance calls = %d, want 1",
-			consumer.allowRebalanceCalls,
-		)
+		t.Fatalf("AllowRebalance calls = %d, want 1", consumer.allowRebalanceCalls)
 	}
 	if len(consumer.maxRecords) != 1 || consumer.maxRecords[0] != 1 {
 		t.Fatalf("PollRecords maxRecords = %v, want [1]", consumer.maxRecords)
 	}
 }
 
-func TestRebalanceYieldConsumerRunnerDoesNotCommitYieldedRecord(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
+func TestRebalanceYieldConsumerRunnerStopsSessionAfterYield(t *testing.T) {
 	yield := NewRebalanceYield()
 
-	record := &kgo.Record{
+	firstRecord := &kgo.Record{
 		Topic:     "command-test",
 		Partition: 0,
-		Offset:    215,
+		Offset:    309,
+	}
+	secondRecord := &kgo.Record{
+		Topic:     "command-test",
+		Partition: 0,
+		Offset:    310,
 	}
 
 	consumer := &fakeRebalanceYieldConsumer{
-		fetches:                   []kgo.Fetches{fetchWithRecords(record)},
-		cancel:                    cancel,
-		cancelAfterAllowRebalance: 1,
+		fetches: []kgo.Fetches{
+			fetchWithRecords(firstRecord),
+			fetchWithRecords(secondRecord),
+		},
 	}
 
 	handler := &rebalanceYieldTestHandler{
@@ -83,31 +79,25 @@ func TestRebalanceYieldConsumerRunnerDoesNotCommitYieldedRecord(t *testing.T) {
 		},
 	}
 
-	runner := newRebalanceYieldConsumerRunner(
-		consumer,
-		handler,
-		yield,
-	)
+	runner := newRebalanceYieldConsumerRunner(consumer, handler, yield)
 
-	if err := runner.Run(ctx); err != nil {
-		t.Fatalf("Run() error = %v", err)
+	err := runner.Run(context.Background())
+	if !errors.Is(err, ErrRebalanceYielded) {
+		t.Fatalf("Run() error = %v, want ErrRebalanceYielded", err)
 	}
 
+	if consumer.pollCalls != 1 {
+		t.Fatalf("PollRecords calls = %d, want 1", consumer.pollCalls)
+	}
 	if len(consumer.committed) != 0 {
 		t.Fatalf("committed count = %d, want 0", len(consumer.committed))
 	}
 	if consumer.allowRebalanceCalls != 1 {
-		t.Fatalf(
-			"AllowRebalance calls = %d, want 1",
-			consumer.allowRebalanceCalls,
-		)
+		t.Fatalf("AllowRebalance calls = %d, want 1", consumer.allowRebalanceCalls)
 	}
 }
 
 func TestRebalanceYieldConsumerRunnerHandlesYieldBeforeRecordBind(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
 	yield := NewRebalanceYield()
 
 	record := &kgo.Record{
@@ -117,9 +107,7 @@ func TestRebalanceYieldConsumerRunnerHandlesYieldBeforeRecordBind(t *testing.T) 
 	}
 
 	consumer := &fakeRebalanceYieldConsumer{
-		fetches:                   []kgo.Fetches{fetchWithRecords(record)},
-		cancel:                    cancel,
-		cancelAfterAllowRebalance: 1,
+		fetches: []kgo.Fetches{fetchWithRecords(record)},
 		onPoll: func() {
 			yield.Request()
 		},
@@ -137,25 +125,25 @@ func TestRebalanceYieldConsumerRunnerHandlesYieldBeforeRecordBind(t *testing.T) 
 		},
 	}
 
-	runner := newRebalanceYieldConsumerRunner(
-		consumer,
-		handler,
-		yield,
-	)
+	runner := newRebalanceYieldConsumerRunner(consumer, handler, yield)
 
-	if err := runner.Run(ctx); err != nil {
-		t.Fatalf("Run() error = %v", err)
+	err := runner.Run(context.Background())
+	if !errors.Is(err, ErrRebalanceYielded) {
+		t.Fatalf("Run() error = %v, want ErrRebalanceYielded", err)
 	}
 
+	if consumer.pollCalls != 1 {
+		t.Fatalf("PollRecords calls = %d, want 1", consumer.pollCalls)
+	}
 	if len(consumer.committed) != 0 {
 		t.Fatalf("committed count = %d, want 0", len(consumer.committed))
 	}
+	if consumer.allowRebalanceCalls != 1 {
+		t.Fatalf("AllowRebalance calls = %d, want 1", consumer.allowRebalanceCalls)
+	}
 }
 
-func TestRebalanceYieldConsumerRunnerSuppressesCommitFailureAfterYield(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
+func TestRebalanceYieldConsumerRunnerReturnsYieldAfterCommitFailure(t *testing.T) {
 	yield := NewRebalanceYield()
 
 	record := &kgo.Record{
@@ -167,32 +155,28 @@ func TestRebalanceYieldConsumerRunnerSuppressesCommitFailureAfterYield(t *testin
 	commitCause := errors.New("UNKNOWN_MEMBER_ID")
 
 	consumer := &fakeRebalanceYieldConsumer{
-		fetches:                   []kgo.Fetches{fetchWithRecords(record)},
-		commitErr:                 commitCause,
-		cancel:                    cancel,
-		cancelAfterAllowRebalance: 1,
+		fetches:   []kgo.Fetches{fetchWithRecords(record)},
+		commitErr: commitCause,
 		onCommit: func() {
 			yield.Request()
 		},
 	}
 
-	handler := &rebalanceYieldTestHandler{}
-
 	runner := newRebalanceYieldConsumerRunner(
 		consumer,
-		handler,
+		&rebalanceYieldTestHandler{},
 		yield,
 	)
 
-	if err := runner.Run(ctx); err != nil {
-		t.Fatalf("Run() error = %v, want nil after rebalance yield", err)
+	err := runner.Run(context.Background())
+	if !errors.Is(err, ErrRebalanceYielded) {
+		t.Fatalf("Run() error = %v, want ErrRebalanceYielded", err)
 	}
-
+	if consumer.pollCalls != 1 {
+		t.Fatalf("PollRecords calls = %d, want 1", consumer.pollCalls)
+	}
 	if consumer.allowRebalanceCalls != 1 {
-		t.Fatalf(
-			"AllowRebalance calls = %d, want 1",
-			consumer.allowRebalanceCalls,
-		)
+		t.Fatalf("AllowRebalance calls = %d, want 1", consumer.allowRebalanceCalls)
 	}
 }
 
@@ -230,10 +214,7 @@ func TestRebalanceYieldConsumerRunnerReturnsOrdinaryHandlerFailure(t *testing.T)
 		t.Fatalf("committed count = %d, want 0", len(consumer.committed))
 	}
 	if consumer.allowRebalanceCalls != 1 {
-		t.Fatalf(
-			"AllowRebalance calls = %d, want 1",
-			consumer.allowRebalanceCalls,
-		)
+		t.Fatalf("AllowRebalance calls = %d, want 1", consumer.allowRebalanceCalls)
 	}
 }
 
@@ -263,10 +244,7 @@ func TestRebalanceYieldConsumerRunnerReturnsOrdinaryCommitFailure(t *testing.T) 
 	}
 
 	if consumer.allowRebalanceCalls != 1 {
-		t.Fatalf(
-			"AllowRebalance calls = %d, want 1",
-			consumer.allowRebalanceCalls,
-		)
+		t.Fatalf("AllowRebalance calls = %d, want 1", consumer.allowRebalanceCalls)
 	}
 }
 
@@ -301,9 +279,8 @@ type fakeRebalanceYieldConsumer struct {
 	onPoll   func()
 	onCommit func()
 
-	cancel                    context.CancelFunc
-	cancelAfterCommits        int
-	cancelAfterAllowRebalance int
+	cancel             context.CancelFunc
+	cancelAfterCommits int
 }
 
 func (consumer *fakeRebalanceYieldConsumer) PollRecords(
@@ -339,10 +316,7 @@ func (consumer *fakeRebalanceYieldConsumer) CommitRecords(
 		return consumer.commitErr
 	}
 
-	consumer.committed = append(
-		consumer.committed,
-		records...,
-	)
+	consumer.committed = append(consumer.committed, records...)
 
 	if consumer.cancel != nil &&
 		consumer.cancelAfterCommits > 0 &&
@@ -355,10 +329,4 @@ func (consumer *fakeRebalanceYieldConsumer) CommitRecords(
 
 func (consumer *fakeRebalanceYieldConsumer) AllowRebalance() {
 	consumer.allowRebalanceCalls++
-
-	if consumer.cancel != nil &&
-		consumer.cancelAfterAllowRebalance > 0 &&
-		consumer.allowRebalanceCalls >= consumer.cancelAfterAllowRebalance {
-		consumer.cancel()
-	}
 }

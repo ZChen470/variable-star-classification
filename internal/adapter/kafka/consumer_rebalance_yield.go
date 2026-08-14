@@ -9,17 +9,17 @@ import (
 	"github.com/twmb/franz-go/pkg/kgo"
 )
 
+var ErrRebalanceYielded = errors.New("kafka consumer rebalance yielded")
+
 type rebalanceYieldConsumerClient interface {
 	PollRecords(ctx context.Context, maxRecords int) kgo.Fetches
-
 	CommitRecords(ctx context.Context, records ...*kgo.Record) error
-
 	AllowRebalance()
 }
 
-// RebalanceYieldConsumerRunner processes at most one Kafka record per poll and
-// yields the current in-flight record when BlockRebalanceOnPoll reports that a
-// rebalance callback is blocked.
+// RebalanceYieldConsumerRunner processes at most one Kafka record per poll.
+// When a blocked rebalance requests a yield, the runner stops the current
+// consumer session without committing the yielded record.
 type RebalanceYieldConsumerRunner struct {
 	consumer rebalanceYieldConsumerClient
 	handler  application.MessageHandler
@@ -129,7 +129,7 @@ func (runner *RebalanceYieldConsumerRunner) Run(ctx context.Context) error {
 		if runner.yield.RequestedSince(generation) {
 			release()
 			runner.consumer.AllowRebalance()
-			continue
+			return ErrRebalanceYielded
 		}
 
 		if handleErr != nil {
@@ -156,7 +156,7 @@ func (runner *RebalanceYieldConsumerRunner) Run(ctx context.Context) error {
 		runner.consumer.AllowRebalance()
 
 		if yielded {
-			continue
+			return ErrRebalanceYielded
 		}
 
 		if commitErr != nil {
