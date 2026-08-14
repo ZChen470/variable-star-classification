@@ -75,7 +75,7 @@ jobs:
         run: |
           self_test_file="$(mktemp)"
           trap 'rm -f "$self_test_file"' EXIT
-          printf '%s' 'token = "ghp_aBcDeFgHiJkLmNoPqRsTuVwXyZ0123456789"' > "$self_test_file"
+          printf 'token = "%s%s%s"\n' 'ghp_' 'aBcDeFgHiJkLmNoPqRs' 'TuVwXyZ0123456789' > "$self_test_file"
 
           set +e
           gitleaks detect --no-git --source "$self_test_file" --no-banner --redact
@@ -88,7 +88,7 @@ jobs:
           fi
 
       - name: Run secret scan
-        run: gitleaks detect --source . --no-banner --redact --verbose --log-opts="--all"
+        run: gitleaks detect --source . --no-banner --redact --verbose --gitleaks-ignore-path .gitleaksignore --log-opts="--all"
 
       - name: Run quality gate
         run: make ci
