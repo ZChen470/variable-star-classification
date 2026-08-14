@@ -1,6 +1,6 @@
 module github.com/ZChen470/variable-star-classification
 
-go 1.25.0
+go 1.25.13
 
 require google.golang.org/protobuf v1.36.11
 
