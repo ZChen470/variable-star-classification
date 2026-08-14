@@ -28,6 +28,8 @@ const (
 	serviceName                 = "classification-result-writer"
 	managementReadHeaderTimeout = 5 * time.Second
 	managementShutdownTimeout   = 5 * time.Second
+
+	classificationRunPersistenceTimeout = 10 * time.Second
 )
 
 func main() {
@@ -139,9 +141,21 @@ func run(logger *slog.Logger) error {
 	repository :=
 		postgresadapter.NewClassificationRepository(pool)
 
+	timedRepository, err :=
+		application.NewTimeoutClassificationRunSaver(
+			repository,
+			classificationRunPersistenceTimeout,
+		)
+	if err != nil {
+		return fmt.Errorf(
+			"create classification result persistence timeout: %w",
+			err,
+		)
+	}
+
 	observedRepository, err := resultmetrics.NewSaver(
 		registry,
-		repository,
+		timedRepository,
 	)
 	if err != nil {
 		return fmt.Errorf(
