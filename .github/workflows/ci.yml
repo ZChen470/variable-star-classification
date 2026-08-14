@@ -22,6 +22,8 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
 
       - name: Set up Go
         uses: actions/setup-go@v6
@@ -47,6 +49,14 @@ jobs:
       - name: Install govulncheck
         run: go install golang.org/x/vuln/cmd/govulncheck@v1.7.0
 
+      - name: Install Gitleaks
+        run: |
+          curl -fsSL --retry 5 --retry-delay 2 \
+            https://github.com/gitleaks/gitleaks/releases/download/v8.18.4/gitleaks_8.18.4_linux_x64.tar.gz \
+            -o /tmp/gitleaks.tar.gz
+          tar -xzf /tmp/gitleaks.tar.gz -C /tmp gitleaks
+          install -m 0755 /tmp/gitleaks "$(go env GOPATH)/bin/gitleaks"
+
       - name: Show tool versions
         run: |
           go version
@@ -55,9 +65,30 @@ jobs:
           goose -version
           govulncheck -version
           make --version
+          gitleaks version
 
       - name: Run vulnerability scan
         run: govulncheck ./...
+
+      - name: Verify Gitleaks detection
+        shell: bash
+        run: |
+          self_test_file="$(mktemp)"
+          trap 'rm -f "$self_test_file"' EXIT
+          printf '%s' 'token = "ghp_aBcDeFgHiJkLmNoPqRsTuVwXyZ0123456789"' > "$self_test_file"
+
+          set +e
+          gitleaks detect --no-git --source "$self_test_file" --no-banner --redact
+          rc=$?
+          set -e
+
+          if [ "$rc" -ne 1 ]; then
+            echo "Gitleaks self-test failed: expected exit 1, got $rc"
+            exit 1
+          fi
+
+      - name: Run secret scan
+        run: gitleaks detect --source . --no-banner --redact --verbose --log-opts="--all"
 
       - name: Run quality gate
         run: make ci
