@@ -1,0 +1,20 @@
+ARG MODEL_ARTIFACT=ghcr.io/zchen470/variable-star-model-release@sha256:294a7e45f5c8a1766c051a3fa42f23f997205f9f89e25a608d1bf8694fb35f2b
+FROM ${MODEL_ARTIFACT} AS model_release
+
+FROM nvcr.io/nvidia/tritonserver:26.03-py3@sha256:72d1d796b49a17e6432d4908c95969be0dded2f4d06469fa0824a71ecf0b895b
+
+COPY models/serving/requirements-serving.txt /tmp/requirements-serving.txt
+
+RUN python3 -m pip install \
+        --no-cache-dir \
+        --only-binary=:all: \
+        --requirement /tmp/requirements-serving.txt \
+    && python3 -m pip check \
+    && rm -f /tmp/requirements-serving.txt
+
+COPY --from=model_release /release/model_repository /models
+
+LABEL org.opencontainers.image.title="Variable Star Triton Serving"
+LABEL variable-star.triton.base-digest="sha256:72d1d796b49a17e6432d4908c95969be0dded2f4d06469fa0824a71ecf0b895b"
+LABEL variable-star.model-artifact-digest="sha256:294a7e45f5c8a1766c051a3fa42f23f997205f9f89e25a608d1bf8694fb35f2b"
+LABEL variable-star.model-release-manifest-sha256="14759445a9b677f9d914132b1769c83e5e4dc3e38bd614e1e8eedfeb4decdafc"
