@@ -44,22 +44,24 @@ Runbook 只描述当前系统真实存在或已经明确冻结的运行机制，
 
 | 故障场景                                 | 主要组件                                  | 当前工程验证状态            | 详细 Runbook   |
 | ---------------------------------------- | ----------------------------------------- | --------------------------- | -------------- |
-| Kafka consumer lag 持续增长              | Orchestrator / Worker / Writer            | PARTIALLY_VERIFIED_SERVER   | TODO           |
-| Candidate DLQ 增长                       | candidate-orchestrator                    | VERIFIED_CI                 | TODO           |
-| Command DLQ 增长                         | classifier-worker                         | VERIFIED_CI                 | TODO           |
-| Result DLQ 增长                          | classification-result-writer              | VERIFIED_CI                 | TODO           |
-| Triton unavailable                       | classifier-worker / Triton                | SERVER_VERIFIED             | TODO           |
-| LightCurve API unavailable               | classifier-worker / LightCurve            | SERVER_VERIFIED             | TODO           |
-| PostgreSQL unavailable                   | classification-result-writer / PostgreSQL | SERVER_VERIFIED             | TODO           |
-| PostgreSQL lock / slow query             | Writer / PostgreSQL                       | NOT_YET_FAULT_INJECTED      | TODO           |
-| 服务频繁重启                             | 三个核心 daemon                           | PARTIALLY_VERIFIED_SERVER   | TODO           |
-| Triton contract mismatch                 | classifier-worker / Triton                | VERIFIED_CI_AND_SERVER_GATE | TODO           |
-| Manifest mismatch                        | classifier-worker / Model Bundle          | VERIFIED_CI                 | TODO           |
+| Kafka consumer lag 持续增长              | Orchestrator / Worker / Writer            | PARTIALLY_VERIFIED_SERVER   | [kafka-consumer-lag-and-stuck.md](kafka-consumer-lag-and-stuck.md) |
+| Candidate DLQ 增长                       | candidate-orchestrator                    | VERIFIED_CI                 | [dlq-growth.md](dlq-growth.md) |
+| Command DLQ 增长                         | classifier-worker                         | VERIFIED_CI                 | [dlq-growth.md](dlq-growth.md) |
+| Result DLQ 增长                          | classification-result-writer              | VERIFIED_CI                 | [dlq-growth.md](dlq-growth.md) |
+| Triton unavailable                       | classifier-worker / Triton                | SERVER_VERIFIED             | [classifier-worker-dependency-unavailable.md](classifier-worker-dependency-unavailable.md) |
+| LightCurve API unavailable               | classifier-worker / LightCurve            | SERVER_VERIFIED             | [classifier-worker-dependency-unavailable.md](classifier-worker-dependency-unavailable.md) |
+| PostgreSQL unavailable                   | classification-result-writer / PostgreSQL | SERVER_VERIFIED             | [postgresql-unavailable-and-slow.md](postgresql-unavailable-and-slow.md) |
+| PostgreSQL lock / slow query             | Writer / PostgreSQL                       | NOT_YET_FAULT_INJECTED      | [postgresql-unavailable-and-slow.md](postgresql-unavailable-and-slow.md) |
+| 服务频繁重启                             | 三个核心 daemon                           | PARTIALLY_VERIFIED_SERVER   | [service-restart-loop.md](service-restart-loop.md) |
+| Triton contract mismatch                 | classifier-worker / Triton                | VERIFIED_CI_AND_SERVER_GATE | [contract-and-manifest-mismatch.md](contract-and-manifest-mismatch.md) |
+| Manifest mismatch                        | classifier-worker / Model Bundle          | VERIFIED_CI                 | [contract-and-manifest-mismatch.md](contract-and-manifest-mismatch.md) |
 | 模型不可用                               | Triton / Model Repository                 | DEFERRED                    | 本文第 7、8 节 |
-| 模型版本升级 / 回滚                      | Triton / Model Repository                 | PROCEDURE_DEFINED           | 本文第 8 节    |
-| 磁盘空间不足                             | PostgreSQL / backup / model artifacts     | NOT_YET_FAULT_INJECTED      | TODO           |
-| PostgreSQL 数据库恢复                    | PostgreSQL                                | SERVER_VERIFIED             | TODO           |
-| Kafka consumer stuck / rebalance blocked | classifier-worker / result-writer         | SERVER_VERIFIED             | TODO           |
+| 模型版本升级 / 回滚                      | Triton / Model Repository                 | PROCEDURE_DEFINED           | 本文第 8 节 |
+| 磁盘空间不足                             | PostgreSQL / backup / model artifacts     | NOT_YET_FAULT_INJECTED      | [disk-space.md](disk-space.md) |
+| PostgreSQL 数据库恢复                    | PostgreSQL                                | SERVER_VERIFIED             | [postgresql-recovery.md](postgresql-recovery.md) |
+| Kafka consumer stuck / rebalance blocked | classifier-worker / result-writer         | SERVER_VERIFIED             | [kafka-consumer-lag-and-stuck.md](kafka-consumer-lag-and-stuck.md) |
+
+
 
 ## 4. 已验证的恢复能力
 
