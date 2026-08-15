@@ -1,0 +1,9 @@
+PyYAML==6.0.3
+astropy==6.1.4
+astropy-iers-data==0.2026.8.3.0.53.6
+pandas==2.1.4
+pyerfa==2.0.1.5
+python-dateutil==2.9.0.post0
+pytz==2026.3.post1
+scipy==1.11.4
+tzdata==2026.3

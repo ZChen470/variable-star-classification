@@ -1,0 +1,13 @@
+FROM nvcr.io/nvidia/tritonserver:26.03-py3@sha256:72d1d796b49a17e6432d4908c95969be0dded2f4d06469fa0824a71ecf0b895b
+
+COPY models/serving/requirements-serving.txt /tmp/requirements-serving.txt
+
+RUN python3 -m pip install \
+        --no-cache-dir \
+        --only-binary=:all: \
+        --requirement /tmp/requirements-serving.txt \
+    && python3 -m pip check \
+    && rm -f /tmp/requirements-serving.txt
+
+LABEL org.opencontainers.image.title="Variable Star Triton Serving"
+LABEL variable-star.triton.base-digest="sha256:72d1d796b49a17e6432d4908c95969be0dded2f4d06469fa0824a71ecf0b895b"
