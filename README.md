@@ -2,22 +2,13 @@
 
 变源候选体实时分类系统的 Go 工程仓库。
 
-系统面向地基光学望远镜产生的变源候选体，通过固定光变曲线 revision、版本化模型契约、确定性任务身份、Kafka 异步消息和 PostgreSQL 幂等持久化，形成可追溯、可重放、可扩展的实时分类基础。
+系统面向地基光学望远镜产生的变源候选体，通过固定光变曲线 revision、版本化模型契约、确定性任务身份、Kafka 异步消息、Triton 推理和 PostgreSQL 幂等持久化，形成可追溯、可重放、可恢复、可观测的实时分类基础。
 
-## 当前阶段
+## 当前状态
 
-阶段 1 至阶段 6 的工程闭环已经完成：
+核心实时分类链路已经完成应用层、Adapter、运行时装配、服务器联合 E2E、故障恢复、安全基线、备份恢复和短时容量验收。
 
-```text
-阶段 1：工程仓库、Protobuf、确定性身份、分类器 Port 与基础 CI
-阶段 2：PostgreSQL Classification Repository 与 Kafka 基础设施
-阶段 3：CandidateEvent → ClassificationCommand
-阶段 4：固定 revision → 规范化 ClassificationInput
-阶段 5：Serving Bundle → Triton → ClassificationOutput
-阶段 6：ClassificationCommand → ClassificationResult → ClassificationRun → CurrentClassification
-```
-
-当前运行链路：
+当前主链路：
 
 ```text
 CandidateEvent
@@ -43,25 +34,31 @@ ClassificationRun
 CurrentClassification
 ```
 
-阶段 6 已完成自动分类的应用层、Adapter 和运行时装配闭环。
-
-必须区分不同验证层级：
+当前主要验证状态：
 
 ```text
 应用层与 Adapter：VERIFIED_CI
 真实 Triton：VERIFIED_SERVER
-本地真实 PostgreSQL：VERIFIED_LOCAL
-真实 Kafka Broker：DEFERRED
-真实上游 LightCurve 服务联调：DEFERRED
-Kafka + LightCurve + Triton + PostgreSQL 联合 E2E：DEFERRED
+真实 Kafka：VERIFIED_SERVER
+独立服务器 PostgreSQL：VERIFIED_SERVER
+LightCurve Mock HTTP 联合链路：VERIFIED_SERVER
+Kafka + LightCurve + Triton + PostgreSQL 联合 E2E：VERIFIED_SERVER
+
+33 events/s production peak：PASS / SERVER_VERIFIED
+53 events/s short-duration safety headroom：PASS / SERVER_VERIFIED
+67 events/s upper boundary：
+  correctness / recovery PASS
+  sustained capacity NOT PASS
+
+安全基线：VERIFIED_CI
+PostgreSQL PITR / backup / second-disk recovery：VERIFIED_SERVER
+
+长时间 Soak：DEFERRED
+Model Artifact Recovery：DEFERRED / DOCUMENTED RISK
 正式科学批准：PENDING_FORMAL_BENCHMARK
 ```
 
-下一阶段：
-
-```text
-阶段 7：查询 API、GUI 与人工复核
-```
+查询 API、完整 GUI 与人工复核平台当前不作为本仓库生产化主线的阻塞项。仓库保留轻量科学测试入口 `cmd/science-classifier-web`，用于上传光变曲线并直接调用真实 Triton 做科学推理检查。
 
 ---
 
@@ -72,68 +69,93 @@ Kafka + LightCurve + Triton + PostgreSQL 联合 E2E：DEFERRED
 ```text
 Protobuf v1 契约
 
-确定性 job_id / run_id
+确定性：
+  job_id
+  run_id
 
-PostgreSQL:
+PostgreSQL：
   ClassificationRun
   CurrentClassification
   幂等保存
   Current 条件推进
   兼容历史粗概率查询
 
-Kafka:
+Kafka：
   Publisher
   ConsumerRunner
+  RebalanceYieldConsumerRunner
   手动 Offset
+  SCRAM-SHA-256 可选认证
   Candidate DLQ
   Command DLQ
   Result DLQ
 
-Candidate:
+Candidate：
   CandidateEvent 解码与校验
-  ClassificationPolicy v1
+  ClassificationPolicy
   ClassificationCommand 确定性构造
   CandidateHandler
   candidate-orchestrator
 
-LightCurve:
+LightCurve：
   固定 revision Repository Port
   Fake Repository
   真实 HTTP Adapter
   LightCurveRevisionReader
   机械合法性校验
-  防御性复制与确定性时间排序
+  防御性复制
+  ObservationTime 确定性排序
 
-Classification Input:
+Classification Input：
   ModelBundleResolver
   CoarseModeSelector
   ClassificationInputBuilder
   ClassificationInputPreparer
   Golden / deterministic tests
 
-Serving:
+Serving：
   ServingBundleResolver
   model-bundle-manifest-v2 Loader
   Triton V2 HTTP Client
   Binary Tensor Codec
   Metadata / Config / Ready 契约门禁
   VariableStarClassifier Triton Adapter
+  job_id → Triton request id
 
-Stage 6:
-  ClassificationCommand Decoder
-  Classification Worker
-  ClassificationWorkerError
-  有限快速 Retry
-  Command DLQ
+Result：
   ClassificationRun 构造
   ClassificationResult Proto / Kafka 构造
-  job_id → Triton request id
   ClassificationResult Decoder
-  Classification Result Writer
-  Result DLQ
+  classification-result-writer
   Result → PostgreSQL 分层 E2E
-  classifier-worker composition root
-  classification-result-writer composition root
+
+Observability：
+  JSON structured logging
+  /live
+  /ready
+  /metrics
+  Kafka metrics
+  HTTP metrics
+  PostgreSQL pgxpool metrics
+  retry / retry-age metrics
+  rebalance-blocked metrics
+  Result persistence metrics
+
+Operations：
+  Runbooks
+  Kafka 单 Broker 故障恢复
+  PostgreSQL PITR
+  WAL archive
+  verified physical base backup
+  second-disk WAL mirror
+  bounded backup retention
+
+Security：
+  govulncheck CI gate
+  Gitleaks full-history CI gate
+
+Load：
+  17 / 33 / 53 / 67 events/s 服务器负载证据
 ```
 
 当前不包含：
@@ -146,12 +168,12 @@ Stage 6:
 - Transactional Outbox；
 - `classification.updated` 领域事件；
 - Retry Topic 或独立延迟调度器；
-- 查询 API；
-- GUI；
-- 人工复核；
+- 完整 Query API；
+- 完整科学 GUI / 人工复核平台；
 - UNKNOWN / OOD 业务判定；
-- 完整生产可观测性与安全体系；
-- Kubernetes 生产部署。
+- Kubernetes 生产部署；
+- 自动化 Model Artifact Recovery；
+- 正式 science-benchmark 批准。
 
 ---
 
@@ -159,19 +181,27 @@ Stage 6:
 
 基础开发环境：
 
-- Go 1.25.0
-- Git
+- Go；
+- Git。
+
+当前 CI 使用：
+
+```text
+Go 1.25.13
+```
 
 可选工具和基础设施：
 
-- Make：主要供 Linux 和 CI 使用；
-- Buf：检查和生成 Protobuf；
-- `protoc-gen-go`：生成 Go Protobuf；
-- Goose：验证 PostgreSQL migration；
-- PostgreSQL：Repository 和 Result Writer 集成测试；
-- Kafka：真实 Broker 集成测试；
-- Triton Inference Server：真实模型契约与推理验收；
-- LightCurve HTTP Service：生产固定 revision 数据源。
+- Make；
+- Buf；
+- `protoc-gen-go`；
+- Goose；
+- PostgreSQL；
+- Kafka；
+- Triton Inference Server；
+- Docker / Docker Compose；
+- NVIDIA GPU Runtime；
+- Prometheus-compatible metrics tooling。
 
 Go Module：
 
@@ -184,41 +214,50 @@ github.com/ZChen470/variable-star-classification
 ## 项目结构
 
 ```text
-api/proto/astro/classification/v1/      Protobuf v1 源文件
-gen/go/astro/classification/v1/         生成的 Go Protobuf
+api/proto/astro/classification/v1/       Protobuf v1 源文件
+gen/go/astro/classification/v1/          生成的 Go Protobuf
 
-cmd/candidate-orchestrator/              Candidate → Command 入口
-cmd/classifier-worker/                   Command → Result 入口
-cmd/classification-result-writer/        Result → PostgreSQL 入口
+cmd/candidate-orchestrator/               Candidate → Command
+cmd/classifier-worker/                    Command → Result
+cmd/classification-result-writer/         Result → PostgreSQL
+cmd/lightcurve-mock-server/               联调 LightCurve + Candidate mock
+cmd/science-classifier-web/               轻量科学推理入口
 
-internal/domain/                         领域类型与确定性身份
-internal/application/                    应用 Port、用例与 Handler
+internal/domain/                          领域类型与确定性身份
+internal/application/                     应用 Port、用例与 Handler
 
-internal/adapter/kafka/                  Kafka Publisher / ConsumerRunner
-internal/adapter/postgres/               PostgreSQL Classification Repository
-internal/adapter/lightcurve/             LightCurveRevision HTTP Adapter
-internal/adapter/modelbundle/            Serving Bundle Manifest Loader
-internal/adapter/triton/                 Triton V2 HTTP Adapter
+internal/adapter/kafka/                   Kafka Publisher / Consumer
+internal/adapter/postgres/                PostgreSQL Classification Repository
+internal/adapter/lightcurve/              LightCurveRevision HTTP Adapter
+internal/adapter/modelbundle/             Serving Bundle Manifest Loader
+internal/adapter/triton/                  Triton V2 HTTP Adapter
 
-internal/testsupport/fakeclassifier/
-internal/testsupport/fakelightcurve/
-internal/testsupport/fakemodelbundle/
-internal/testsupport/fakeservingbundle/
+internal/observability/logging/           slog JSON logging
+internal/observability/management/        /live /ready /metrics
+internal/observability/kafkametrics/      Kafka Prometheus metrics
+internal/observability/httpmetrics/       HTTP client metrics
+internal/observability/postgresmetrics/   pgxpool metrics
 
-models/bundles/                          Manifest、Serving Contract 与 fixtures
-migrations/                              Goose migrations
-docs/contracts/                          上下游契约
-tests/                                   跨包测试
+internal/testsupport/                     Fake / fixture 支持
+
+models/bundles/                           Manifest、Serving Contract、fixtures
+migrations/                               Goose migrations
+docs/runbooks/                            运维与恢复 Runbook
+tests/                                    跨包测试
 ```
 
 ---
 
-## 本地验证
+## 本地与 CI 验证
 
-PowerShell 基础门禁：
+基础 Go 门禁：
 
-```powershell
-& { gofmt -w .; if ($LASTEXITCODE -ne 0) { return }; go test ./... -count=1; if ($LASTEXITCODE -ne 0) { return }; go vet ./...; if ($LASTEXITCODE -ne 0) { return }; go build ./...; if ($LASTEXITCODE -ne 0) { return }; git diff --check; git status --short }
+```bash
+gofmt -w .
+go test ./... -count=1
+go vet ./...
+go build ./...
+git diff --check
 ```
 
 Linux / CI：
@@ -227,9 +266,9 @@ Linux / CI：
 make ci
 ```
 
-GitHub Actions 当前检查：
+GitHub Actions 当前覆盖：
 
-- Go 格式；
+- Go 格式检查；
 - Protobuf format / lint / build；
 - Protobuf 生成代码漂移；
 - Go Module 漂移；
@@ -237,9 +276,12 @@ GitHub Actions 当前检查：
 - `go vet`；
 - 全部普通测试；
 - 全部包构建；
-- Git 工作区漂移。
+- `govulncheck`；
+- Gitleaks 自检；
+- Gitleaks 完整 Git 历史扫描；
+- Git 工作区漂移检查。
 
-真实外部服务集成测试根据环境显式启用，不强塞入普通 CI。
+真实 Kafka、PostgreSQL、Triton 和联合服务器 E2E 不强塞入普通 CI，而使用显式服务器验收。
 
 ---
 
@@ -276,7 +318,7 @@ buf generate
 
 生成的 `.pb.go` 不应手工修改。
 
-阶段 6 已退役不再使用的旧字段通过 Proto `reserved` 保留字段号/名称保护，避免后续误复用。
+已退役字段通过 Proto `reserved` 保留字段号和名称，避免未来误复用。
 
 ---
 
@@ -324,16 +366,16 @@ internal/domain/identity.go
 
 字符串身份字段原样参与计算，不自动 trim、不转换大小写。
 
-`classifier-worker` 消费 Command 时会重新计算并验证 `job_id`。
+`classifier-worker` 消费 Command 时重新计算并验证 `job_id`。
 
-`classification-result-writer` 消费 Result 时会重新计算并验证：
+`classification-result-writer` 消费 Result 时重新计算并验证：
 
 ```text
 job_id
 run_id
 ```
 
-`classification_policy_version` 已从活动契约和任务身份中退役，不再参与 Command、Result、Run 或 JobID。
+`classification_policy_version` 已从活动任务身份中退役，不再参与 Command / Result / Run / JobID 身份计算。
 
 ---
 
@@ -364,7 +406,7 @@ Command Kafka Key：
 object_id
 ```
 
-Command 中固定：
+Command 固定携带：
 
 ```text
 object_id
@@ -377,13 +419,13 @@ job_id
 trace_context
 ```
 
-Worker 不读取 latest revision，也不重新决定 Command 的任务身份。
+Worker 不读取 latest revision，也不重新决定 Command 的逻辑身份。
 
 ---
 
 ## 固定 LightCurveRevision
 
-生产 Worker 通过真实 HTTP Adapter 精确读取：
+生产 Worker 精确读取：
 
 ```text
 GET /internal/v1/objects/{object_id}/light-curves/{light_curve_revision}
@@ -403,16 +445,17 @@ closest revision
 revision fallback
 ```
 
-HTTP 错误语义：
+当前上游语义要求：只有固定 `LightCurveRevision` 完整生成并可读取后，才发布对应 Kafka 消息。
+
+当前主要 HTTP 错误语义：
 
 ```text
+200
+→ 固定 revision 存在且可读取
+
 404
 → ErrLightCurveRevisionNotFound
 → PERMANENT
-
-409
-→ ErrLightCurveRevisionNotReady
-→ RETRYABLE
 
 422
 → ErrLightCurveRevisionInconsistent
@@ -423,23 +466,23 @@ HTTP 错误语义：
 → RETRYABLE
 ```
 
+当前不依赖 record-level `409 NotReady` 作为生产重试机制。
+
 Adapter：
 
 - 保留上游 epoch 原始顺序；
 - 允许上游增加未知 JSON 字段；
-- 检查请求与响应中的 `object_id` / revision 身份一致性；
+- 验证响应 `object_id` / revision 身份；
 - 不执行科学质量判断；
 - 不执行 epoch 排序；
 - 不执行 `3..1024` 数量范围校验；
 - 不执行有限值或重复时间校验。
 
-上游认证方式当前未被冻结，因此 Adapter 不虚构 Bearer Token、API Key 或 mTLS 契约；需要时由部署配置与 `http.Client.Transport` 扩展。
-
 机械准备由应用层负责：
 
 ```text
 LightCurveRevisionReader
-→ 三类 epoch 数一致
+→ Command / Revision / Epoch 实际数量一致
 → 3..1024
 → finite values
 → magnitude_error > 0
@@ -448,7 +491,7 @@ LightCurveRevisionReader
 → 重复 ObservationTime 永久拒绝
 ```
 
-排序只发生在副本上，Repository 返回对象保持原始顺序。
+排序只发生在副本上。
 
 ---
 
@@ -480,13 +523,13 @@ ErrCompatibleCoarseNotFound
 
 其他历史查询错误保持失败，不得误判成“不存在历史结果”。
 
-`classifier-worker` 使用 PostgreSQL `ClassificationRepository` 查询兼容历史粗概率，但 Worker 本身不写数据库。
+`classifier-worker` 使用 PostgreSQL `ClassificationRepository` 查询兼容历史粗概率，但 Worker 本身不写 ClassificationRun 数据库。
 
 ---
 
 ## Serving Bundle 与 Triton
 
-Serving Bundle 解析：
+Serving Bundle：
 
 ```text
 internal/application/serving_bundle_resolver.go
@@ -501,16 +544,9 @@ model_name
 model_version
 ```
 
-禁止自动选择 latest 或版本 fallback。
+禁止 latest 或版本 fallback。
 
-`classifier-worker` 每个进程只加载一次不可变 `FileServingBundleResolver`。同一个 Resolver：
-
-```text
-├── 作为 Worker 的 ServingBundleResolver
-└── 投影为阶段 4 所需的最小 ModelBundleResolver
-```
-
-因此运行时 Bundle 身份由同一份 Manifest 统一提供，不增加每条消息的重复绑定校验。
+`classifier-worker` 每个进程只加载一次不可变 `FileServingBundleResolver`。
 
 统一 Triton 入口：
 
@@ -551,25 +587,25 @@ Config
 
 契约门禁。
 
-`job_id` 会通过 Context 传给 Triton inference request：
+`job_id` 通过 Context 传给 Triton inference request：
 
 ```text
 Triton request.id = ClassificationCommand.job_id
 ```
 
-同一 Command 快速重试仍使用相同 request id。
+同一 Command 重试继续使用同一个 request id。
 
 ---
 
 ## ClassificationRun 与 ClassificationResult
 
-成功推理结果先构造：
+成功推理先形成：
 
 ```text
 domain.ClassificationRun
 ```
 
-然后映射为：
+再映射为：
 
 ```text
 ClassificationResult Proto
@@ -590,26 +626,15 @@ Result Kafka Timestamp：
 completed_at
 ```
 
-Result Proto 和 Kafka Headers 传播 trace / 消息上下文。
+TraceContext 和 Kafka Headers 按既有契约传播。
 
-阶段 6 不采集推理耗时，因此旧 timing 字段已退役，不填充虚构耗时。
-
-当前活动 Result/Run 版本身份只保留：
+当前活动 Result / Run 模型身份保留：
 
 ```text
 model_bundle_version
 ```
 
-不再单独携带：
-
-```text
-classification_policy_version
-xgboost_model_version
-transformer_model_version
-feature_schema_version
-```
-
-这些内部模型组成由不可变 Bundle Manifest 管理，不作为 Result/Run 的独立活动身份。
+内部 XGBoost / Transformer / Schema 组成由不可变 Bundle Manifest 管理。
 
 ---
 
@@ -628,13 +653,9 @@ predicted_leaf_class   = argmax(leaf_probabilities)
 选择最小数组索引
 ```
 
-类别映射使用显式稳定 Enum ID，不依赖 Enum 数值恰好等于数组索引。
+类别映射使用显式稳定 Enum ID。
 
-阶段 6 不增加第二套 Probability Validator。
-
-概率范围、概率和、融合公式以及 REUSE 概率一致性继续由阶段 5 Serving Contract、服务端和 Triton Adapter 边界负责。
-
-Result Writer 只重新检查 predicted class 与确定性 argmax 一致，不重新实现模型科学验证。
+Result Writer 只重新检查 predicted class 与确定性 argmax 一致，不重新实现概率范围、概率和、融合公式或 REUSE 概率一致性验证。
 
 ---
 
@@ -662,13 +683,12 @@ ClassificationCommand
 
 Worker：
 
-- 不写 ClassificationRun 数据库；
-- 不提交 Kafka Offset；
+- 不直接写 ClassificationRun；
 - 不读取 latest；
-- 不填充虚构 timing；
-- 只有完整成功结果才发布 ClassificationResult。
+- 只有完整成功结果才发布 ClassificationResult；
+- Result 发布成功后才允许原 Command offset 被提交。
 
-Command 处理装饰链：
+Command 装饰链：
 
 ```text
 CommandDLQHandler
@@ -684,13 +704,13 @@ ClassificationWorkerHandler
 DLQ(Retry(Worker))
 ```
 
-这个顺序保证 Command DLQ 发布失败不会重新执行整个 Worker。
+这个顺序保证 Command DLQ 发布失败不会重新执行完整 Worker 流程。
 
 ---
 
-## Worker 错误与有限快速重试
+## Worker 错误与长期 RETRYABLE
 
-Worker 使用结构化：
+Worker 使用结构化错误：
 
 ```text
 ClassificationWorkerError
@@ -708,48 +728,109 @@ PERMANENT
 CANCELLED
 ```
 
-保留 `errors.Is / errors.As` Cause 链，不依赖错误全文进行业务分类。
+保留 `errors.Is / errors.As` Cause 链，不依赖错误全文做业务分类。
 
-当前默认快速重试：
+生产运行时对 `RETRYABLE` 使用：
 
 ```text
-首次执行
-→ RETRYABLE
-→ 等待 100 ms
-→ 第 2 次执行
-→ RETRYABLE
-→ 等待 300 ms
-→ 第 3 次执行
+capped backoff
++
+无最大尝试次数
 ```
 
-只重试 `RETRYABLE`。
-
-不重试：
+当前 backoff 上限：
 
 ```text
+10 s
+```
+
+语义：
+
+```text
+RETRYABLE
+→ 持续等待并重新执行
+→ 直到成功或 Context 取消
+
 PERMANENT
+→ 不重试
+→ 交给 Command DLQ
+
 CANCELLED
-非结构化错误
+→ 不提交当前 record
 ```
 
-等待期间 Context 取消返回结构化 `CANCELLED`。
+该设计替代了早期“有限快速重试耗尽后让进程退出”的方案。
 
-重试耗尽返回最后一个 `RETRYABLE`。
+不实现 Retry Topic 或独立延迟调度器。
 
-当前不实现 Retry Topic 或独立延迟调度器。
+Prometheus 暴露：
+
+```text
+astro_classification_command_retry_attempts_total
+astro_classification_command_retrying
+astro_classification_command_retry_age_seconds
+```
 
 ---
 
-## Command DLQ
+## Rebalance Yield 与 Consumer Session Recovery
+
+`classifier-worker` 使用：
+
+```text
+DisableAutoCommit
+BlockRebalanceOnPoll
+PollRecords(ctx, 1)
+```
+
+长期 RETRYABLE 与 `BlockRebalanceOnPoll` 组合时，consumer group rebalance 可能等待当前 record 处理完成。
+
+为避免无限阻塞 rebalance，Worker 使用专用：
+
+```text
+RebalanceYieldConsumerRunner
+```
+
+当 `OnPartitionsCallbackBlocked` 触发时：
+
+```text
+记录 rebalance blocked metric
+→ 请求 RebalanceYield
+→ 取消当前 record Context
+→ 不提交当前 record
+→ AllowRebalance
+→ 返回 ErrRebalanceYielded
+→ 结束旧 consumer session
+→ CloseAllowingRebalance
+→ 创建 fresh consumer client
+→ 重新加入 group
+→ 从 committed offset 恢复
+```
+
+关键约束：
+
+> yield 后禁止继续使用旧 consumer session Poll 同 partition 后续 offset。
+
+真实 Kafka 双 Worker 测试已验证：未提交的旧 offset 能由新的 consumer session / 其他 group member 从 committed offset 重新读取，不会因为 fetch position 前进而被后续 commit 越过。
+
+Prometheus 指标：
+
+```text
+astro_kafka_rebalance_callback_blocked_total
+```
+
+---
+
+## Command DLQ 与 Offset
 
 永久 Command 错误：
 
 ```text
 PERMANENT
-→ 原始 Command 发布到 Command DLQ
+→ 发布原始 Command 到 Command DLQ
 → DLQ 成功
 → Handler 返回 nil
-→ ConsumerRunner 提交原 Command offset
+→ 提交原 Command offset
 ```
 
 保留：
@@ -772,8 +853,6 @@ x-astro-original-partition
 x-astro-original-offset
 ```
 
-不把 `Cause.Error()` 文本作为稳定消息契约。
-
 DLQ 发布失败：
 
 ```text
@@ -781,34 +860,7 @@ DLQ 发布失败：
 → 不提交原 Command offset
 ```
 
----
-
-## Command Offset 语义
-
-Worker 只有在：
-
-```text
-ClassificationResult Kafka 发布成功
-```
-
-后才返回 `nil`。
-
-因此：
-
-```text
-Result publish success
-→ Handler nil
-→ ConsumerRunner commit Command offset
-
-Result publish failure
-→ RETRYABLE
-→ finite retry
-→ failure remains
-→ Handler error
-→ no offset commit
-```
-
-Result 发布失败不进入 Command DLQ。
+Result 发布失败同样属于 RETRYABLE，不进入 Command DLQ。
 
 ---
 
@@ -829,8 +881,6 @@ ClassificationResult
 → ClassificationRun
 → SaveRunAndMaybeAdvanceCurrent
 ```
-
-Result Writer 不信任 Kafka Result，但不会重新实现模型科学验证。
 
 消费边界验证包括：
 
@@ -855,7 +905,7 @@ predicted class argmax
 REUSE 概率一致性
 ```
 
-Repository 保存结果的正常返回值无论是：
+Repository 正常返回：
 
 ```text
 RunInserted=true,  CurrentAdvanced=true
@@ -863,21 +913,58 @@ RunInserted=true,  CurrentAdvanced=false
 RunInserted=false, CurrentAdvanced=false
 ```
 
-都属于成功处理。
+都视为成功。
 
-重复 Result 因此是幂等成功。
+重复 Result 因此属于幂等成功。
+
+---
+
+## Result Writer RETRYABLE 与 Rebalance
+
+PostgreSQL 临时错误不进入 Result DLQ。
+
+当前运行链：
+
+```text
+ResultDLQ(
+    ResultRetry(
+        ResultWriter
+    )
+)
+```
+
+数据库单次持久化仍受独立 timeout 限制，但暂时性数据库错误会在当前 record 上持续 RETRYABLE，而不是直接让 Result Writer 进程退出。
+
+`classification-result-writer` 与 Worker 一样使用：
+
+```text
+RebalanceYieldConsumerRunner
++
+fresh consumer session recovery
+```
+
+blocked rebalance 时：
+
+```text
+取消当前 record
+→ 不提交
+→ AllowRebalance
+→ 关闭旧 session
+→ 创建 fresh consumer
+→ 从 committed offset 恢复
+```
 
 ---
 
 ## PostgreSQL
 
-Migration：
+Migration 位于：
 
 ```text
-migrations/00002_create_classification_storage.sql
+migrations/
 ```
 
-当前表：
+核心表：
 
 ```text
 classification_runs
@@ -905,7 +992,7 @@ GetCurrent
 FindLatestCompatibleCoarse
 ```
 
-一个事务内：
+同一事务中：
 
 ```text
 插入不可变 ClassificationRun
@@ -923,14 +1010,14 @@ new.light_curve_revision > current.light_curve_revision
 
 因此：
 
-- 第一个 Production Run 可以建立 Current；
-- 更高 revision Production Run 可以推进；
+- 第一个 Production Run 建立 Current；
+- 更高 revision Production Run 推进；
 - 旧 revision 不推进；
-- 相同 revision 的其他 Bundle 不推进；
+- 同 revision 不覆盖；
 - SHADOW 不推进；
 - REPROCESS 不推进。
 
-相同 Result 重放属于幂等成功。
+相同 Result 重放是幂等成功。
 
 Repository 身份冲突属于永久 Result 错误，由 Result DLQ 处置。
 
@@ -971,77 +1058,63 @@ x-astro-original-offset
 
 ```text
 → 不进 Result DLQ
-→ Handler error
+→ RETRYABLE
 → 不提交 Result offset
 ```
 
-Result DLQ 发布失败：
-
-```text
-→ Handler error
-→ 不提交 Result offset
-```
-
-Context 取消同样不提交 offset。
-
-阶段 6 不为 Result Writer 增加独立快速重试层。
+Context 取消同样不提交当前 offset。
 
 ---
 
 ## Runtime Composition
 
-当前三个可执行服务：
-
-```text
-cmd/candidate-orchestrator/
-cmd/classifier-worker/
-cmd/classification-result-writer/
-```
-
-运行结构：
+生产主链路当前三个核心 daemon：
 
 ```text
 candidate-orchestrator
-        ↓
 classifier-worker
-        ↓
 classification-result-writer
-        ↓
-PostgreSQL
+```
+
+联调辅助：
+
+```text
+lightcurve-mock-server
+```
+
+科学测试辅助：
+
+```text
+science-classifier-web
+```
+
+### candidate-orchestrator
+
+主要依赖：
+
+```text
+Kafka
+```
+
+负责：
+
+```text
+CandidateEvent
+→ ClassificationPolicy
+→ ClassificationCommand
 ```
 
 ### classifier-worker
 
-主要运行依赖：
+主要依赖：
 
 ```text
 Kafka
-LightCurve HTTP Service
+LightCurve HTTP
 PostgreSQL
 Serving Bundle Manifest
 Triton
 ```
-
-主要环境变量：
-
-```text
-KAFKA_BROKERS
-KAFKA_CONSUMER_GROUP
-KAFKA_CLIENT_ID
-
-CLASSIFICATION_COMMAND_TOPIC
-CLASSIFICATION_RESULT_TOPIC
-CLASSIFICATION_COMMAND_DLQ_TOPIC
-
-MODEL_BUNDLE_VERSION
-MODEL_BUNDLE_MANIFEST_PATH
-
-TRITON_BASE_URL
-LIGHT_CURVE_BASE_URL
-POSTGRES_DSN
-```
-
-`KAFKA_CLIENT_ID` 可选；其他变量为运行所需配置。
 
 启动过程：
 
@@ -1055,22 +1128,9 @@ POSTGRES_DSN
 → Triton Client
 → Ready / Metadata / Config Gate
 → VariableStarClassifier
-→ Kafka
+→ Kafka producer
+→ 可重建 Kafka consumer session
 → DLQ(Retry(Worker))
-→ ConsumerRunner
-```
-
-当前 HTTP timeout：
-
-```text
-LightCurve: 10 s
-Triton:     10 s
-```
-
-Triton 单响应最大读取：
-
-```text
-1 MiB
 ```
 
 ### classification-result-writer
@@ -1082,206 +1142,616 @@ Kafka
 PostgreSQL
 ```
 
-主要环境变量：
-
-```text
-KAFKA_BROKERS
-KAFKA_CONSUMER_GROUP
-KAFKA_CLIENT_ID
-
-CLASSIFICATION_RESULT_TOPIC
-CLASSIFICATION_RESULT_DLQ_TOPIC
-
-POSTGRES_DSN
-```
-
 运行链：
 
 ```text
 Kafka Result Consumer
-→ ClassificationResultWriterHandler
+→ ResultRetry
+→ ClassificationResultWriter
 → PostgreSQL
-→ Result DLQ Handler
-→ ConsumerRunner
+→ Result DLQ
 ```
 
-两个进程都使用：
+Worker 和 Result Writer 都使用：
+
+```text
+稳定 producer client
++
+可重建 consumer client/session
+```
+
+以支持 rebalance-yield 后安全结束旧 session 并从 committed offset 恢复。
+
+---
+
+## Kafka 配置
+
+Kafka client 使用 franz-go。
+
+生产 Consumer 基础：
 
 ```text
 DisableAutoCommit
 BlockRebalanceOnPoll
+manual commit
 CloseAllowingRebalance
 ```
 
-只有 Handler 返回 `nil` 时 ConsumerRunner 才提交对应消息 offset。
+服务器环境支持可选：
+
+```text
+KAFKA_SASL_USERNAME
+KAFKA_SASL_PASSWORD
+```
+
+必须成对提供。
+
+启用后使用：
+
+```text
+SASL_PLAINTEXT
+SCRAM-SHA-256
+```
+
+当前服务器业务 / DLQ topic 已验证：
+
+```text
+partitions = 3
+replication factor = 3
+min.insync.replicas = 2
+```
+
+单 Broker 短时故障期间链路能够继续运行，Broker 恢复后 ISR 恢复为 3。
 
 ---
 
-## 运行入口
+## Management 与可观测性
 
-### classifier-worker
+三个核心 daemon 提供独立 management listener：
 
-示例 PowerShell 环境变量：
-
-```powershell
-$env:KAFKA_BROKERS="localhost:9092"
-$env:KAFKA_CONSUMER_GROUP="variable-star-classifier-worker"
-$env:CLASSIFICATION_COMMAND_TOPIC="astro.classification.commands.v1"
-$env:CLASSIFICATION_RESULT_TOPIC="astro.classification.results.v1"
-$env:CLASSIFICATION_COMMAND_DLQ_TOPIC="astro.classification.commands.dlq.v1"
-$env:MODEL_BUNDLE_VERSION="bundle-v1"
-$env:MODEL_BUNDLE_MANIFEST_PATH=".\models\bundles\model-bundle-manifest-v2.yaml"
-$env:TRITON_BASE_URL="http://localhost:8000"
-$env:LIGHT_CURVE_BASE_URL="http://localhost:8080"
-$env:POSTGRES_DSN="postgres://..."
-go run ./cmd/classifier-worker
+```text
+/live
+/ready
+/metrics
 ```
 
-### classification-result-writer
+配置：
 
-```powershell
-$env:KAFKA_BROKERS="localhost:9092"
-$env:KAFKA_CONSUMER_GROUP="variable-star-classification-result-writer"
-$env:CLASSIFICATION_RESULT_TOPIC="astro.classification.results.v1"
-$env:CLASSIFICATION_RESULT_DLQ_TOPIC="astro.classification.results.dlq.v1"
-$env:POSTGRES_DSN="postgres://..."
-go run ./cmd/classification-result-writer
+```text
+MANAGEMENT_LISTEN_ADDR
 ```
 
-以上仅展示配置形态，不代表仓库已经完成真实外部环境联合 E2E。
+management listener 应部署在私有管理网络，不作为业务 API 暴露。
+
+当前日志使用：
+
+```text
+log/slog
+JSON Handler
+```
+
+主要结构化字段包括：
+
+```text
+service
+operation
+object_id
+light_curve_revision
+job_id
+run_id
+model_bundle_version
+trace_id
+correlation_id
+causation_id
+kafka_topic
+kafka_partition
+kafka_offset
+error_code
+error_class
+```
+
+Prometheus instrumentation 包括：
+
+```text
+Kafka broker / producer / consumer
+Kafka group management errors
+rebalance callback blocked
+LightCurve HTTP
+Triton HTTP
+pgxpool
+ClassificationCommand retry
+retry age
+Result persistence
+ClassificationRun persisted
+CurrentClassification advanced
+```
+
+避免使用以下高基数标签：
+
+```text
+object_id
+job_id
+run_id
+trace_id
+partition
+offset
+error text
+broker host
+SQL text
+```
 
 ---
 
-## 分层验收
+## Readiness
 
-### 应用层 Command → Run E2E
+`candidate-orchestrator` readiness 在运行依赖装配和 management listener 成功 bind 后置为 ready。
+
+`classifier-worker` readiness 需要启动阶段完成：
 
 ```text
-ClassificationCommand
-→ InputPreparer
-→ Classifier
-→ ClassificationResult
-→ Result Writer
-→ ClassificationRun
+Serving Manifest / Bundle
+PostgreSQL startup Ping
+Triton serving contract gate
+Kafka / Worker / Retry / DLQ 装配
+management listener bind
 ```
 
-状态：
+`/ready` 不主动访问 LightCurve 上游。
+
+`classification-result-writer` readiness 需要：
 
 ```text
-VERIFIED_CI
+PostgreSQL startup Ping
+Kafka / Writer / Retry / DLQ 装配
+management listener bind
+```
+
+长期运行期间，暂时性外部依赖错误通过 retry 处理；readiness 不作为每条消息依赖健康状态的实时代理。
+
+---
+
+## LightCurve Mock Server
+
+联调入口：
+
+```text
+cmd/lightcurve-mock-server/
+```
+
+从本地真实 CSV / TXT 光变曲线加载固定 revision 数据集。
+
+同一进程：
+
+```text
+HTTP:
+GET /internal/v1/objects/{object_id}/light-curves/{revision}
+
+Kafka:
+按配置速率持续发布 CandidateEvent
+```
+
+主要配置：
+
+```text
+LIGHTCURVE_MOCK_DATA_DIR
+LIGHTCURVE_MOCK_LISTEN_ADDR
+CANDIDATE_TOPIC
+CANDIDATE_RATE_PER_SECOND
+KAFKA_BROKERS
+KAFKA_SASL_USERNAME
+KAFKA_SASL_PASSWORD
+```
+
+该工具用于服务器 E2E / 故障 / 负载测试，不代表真实上游生产服务。
+
+---
+
+## Science Classifier Web
+
+轻量科学入口：
+
+```text
+cmd/science-classifier-web/
+```
+
+用途：
+
+- 上传包含 `time / magnitude / magnitude_error` 的 CSV / TXT；
+- 直接调用真实 Triton；
+- 展示 7 / 10 / 12 概率；
+- 展示 predicted coarse / leaf class；
+- 展示 CoarseMode 和 XGBoost 是否执行。
+
+该入口：
+
+- 不使用 Kafka；
+- 不使用 PostgreSQL；
+- 不使用 LightCurve HTTP；
+- 不创建 ClassificationCommand / Result / Run；
+- 不保存上传数据和分类结果；
+- `3..20` 使用 `COMPUTE_CURRENT`；
+- `21..1024` 使用 `COMPUTE_BOOTSTRAP`；
+- 不支持 `REUSE_PREVIOUS`。
+
+它仅是科学测试工具，不属于生产实时分类链路。
+
+---
+
+## 安全基线
+
+GitHub Actions 当前固定：
+
+```text
+Go 1.25.13
+govulncheck v1.7.0
+Gitleaks v8.18.4
+```
+
+`govulncheck`：
+
+```bash
+govulncheck ./...
+```
+
+当前 CI 已通过。
+
+Gitleaks：
+
+- 使用官方 release binary；
+- CI checkout 使用完整 Git 历史；
+- 包含 synthetic self-test；
+- 对整个 Git 历史执行扫描；
+- 已知 synthetic self-test finding 只通过精确 fingerprint ignore；
+- 不使用宽泛路径忽略或 baseline 隐藏真实泄漏。
+
+当前状态：
+
+```text
+govulncheck：VERIFIED_CI
+Gitleaks：VERIFIED_CI
+```
+
+---
+
+## PostgreSQL 备份与恢复
+
+当前服务器已完成实际恢复演练。
+
+覆盖：
+
+```text
+WAL archive
+物理 pg_basebackup
+pg_verifybackup
+PITR
+独立恢复实例验证
+第二磁盘备份副本
+持续 WAL mirror
+有限保留
+恢复 Runbook
+```
+
+当前 provisional 目标：
+
+```text
+RPO <= 5 min
+RTO <= 1 h
+```
+
+同机异盘 WAL mirror 已进行真实时间测量，满足当前：
+
+```text
+SECOND_DISK_RPO_WITHIN_5MIN = PASS
+```
+
+需要明确：
+
+> 第二磁盘仍位于同一台物理服务器，不构成异机、异地或机房级灾备。
+
+Model Artifact Recovery 当前仍为：
+
+```text
+DEFERRED / DOCUMENTED RISK
+```
+
+---
+
+## Runbooks
+
+目录：
+
+```text
+docs/runbooks/
+```
+
+当前包含：
+
+```text
+README.md
+classifier-worker-dependency-unavailable.md
+kafka-consumer-lag-and-stuck.md
+dlq-growth.md
+postgresql-unavailable-and-slow.md
+postgresql-recovery.md
+contract-and-manifest-mismatch.md
+disk-space.md
+service-restart-loop.md
 ```
 
 覆盖：
 
-- 确定性 JobID；
-- 确定性 RunID；
-- 固定 revision；
-- Model Bundle；
-- CoarseSource；
-- 7 / 10 / 12 概率映射；
-- predicted class；
-- completed_at；
-- `job_id → Triton request id`。
+- Triton / LightCurve 不可用；
+- Worker 长期 RETRYABLE；
+- Kafka lag 与 stuck consumer；
+- DLQ 增长；
+- PostgreSQL unavailable / slow；
+- PostgreSQL backup / PITR recovery；
+- Bundle / Contract mismatch；
+- 磁盘空间；
+- 服务重启循环；
+- Triton immutable model release / rollback。
 
-该测试使用 Fake 依赖，不替代真实外部环境 E2E。
+---
 
-### LightCurve HTTP 分层测试
+## 服务器故障验收
+
+已验证的主要故障场景：
 
 ```text
-HTTP JSON
-→ LightCurveRepository
-→ LightCurveRevisionReader
-→ PrepareLightCurveRevision
+classification-result-writer 重启恢复
+classifier-worker 停机积压与恢复
+candidate-orchestrator 停机积压与恢复
+classifier-worker docker kill
+Triton 短时不可用与自动恢复
+PostgreSQL 短时不可用与自动恢复
+双 Worker rebalance-yield
+fresh consumer session recovery
+Kafka 单 Broker 故障与 ISR 恢复
 ```
 
-状态：
+关键正确性语义：
 
 ```text
-VERIFIED_CI
+副作用完成前不提交 Kafka offset
+PERMANENT → DLQ → 成功后提交
+RETRYABLE → 不 DLQ → 持续重试
+rebalance yield → 当前 record 不提交
+fresh consumer session → 从 committed offset 恢复
 ```
 
-覆盖：
+---
 
-- 固定 URL path；
-- 响应身份；
-- 上游顺序保留；
--应用层副本排序；
-- `404 → PERMANENT / NotFound`；
-- `409 → RETRYABLE / NotReady`；
-- `422 → PERMANENT / Inconsistent`；
-- `503 → RETRYABLE / SourceUnavailable`。
+## Load / Capacity 验收
 
-使用 HTTP Fake Server，不等于真实上游 LightCurve 服务联调。
-
-### PostgreSQL Writer E2E
+服务器负载链路：
 
 ```text
-ClassificationResult
-→ Decoder
-→ Writer
+lightcurve-mock-server
+→ Candidate Kafka
+→ candidate-orchestrator
+→ ClassificationCommand Kafka
+→ classifier-worker
+→ LightCurve HTTP
+→ Triton
+→ ClassificationResult Kafka
+→ classification-result-writer
 → PostgreSQL
-→ ClassificationRun / CurrentClassification
 ```
 
-真实本地 PostgreSQL：
+### 17 events/s
 
 ```text
-VERIFIED_LOCAL
+PASS / SERVER_VERIFIED
 ```
 
-测试代码与普通工程门禁：
+单 Worker 下端到端链路稳定，最终三个 consumer group lag 为 0。
+
+### 33 events/s production peak
 
 ```text
-VERIFIED_CI
+PASS / SERVER_VERIFIED
+classifier workers = 2
 ```
 
-覆盖：
-
-- 幂等 Result 重放；
-- Current 严格按更高 revision 推进；
-- 旧 revision 不覆盖；
-- 同 revision 不覆盖；
-- SHADOW / REPROCESS 不推进；
-- REUSED_PREVIOUS 来源 Run 关系。
-
-### Triton
-
-真实 Triton：
+约 5 分钟窗口：
 
 ```text
-VERIFIED_SERVER
+Candidate consumed       10,640
+Command produced         10,640
+Workers consumed total   10,640
+Results produced total   10,640
+Writer consumed          10,640
+PostgreSQL success       10,640
 ```
 
-覆盖：
+最终三个 consumer group 所有 partition：
 
 ```text
-Ready
-Metadata
-Config
-COMPUTE_CURRENT
-REUSE_PREVIOUS
-COMPUTE_BOOTSTRAP
-Binary Tensor
+LAG = 0
 ```
 
-### 尚未执行的联合外部环境 E2E
+测试窗口：
 
 ```text
-真实 Kafka Broker：DEFERRED
-真实上游 LightCurve HTTP 服务：DEFERRED
-独立服务器 PostgreSQL：DEFERRED
-
-Kafka + LightCurve + Triton + PostgreSQL 全链路：
-DEFERRED
+new retry = 0
+new Command DLQ = 0
+restart = 0
+core errors = 0
 ```
 
-不得把应用层 Fake、HTTP Fake 或本地单依赖测试描述成真实外部环境全链路验收。
+### 53 events/s short-duration safety headroom
+
+```text
+PASS / SERVER_VERIFIED
+classifier workers = 2
+```
+
+约 5 分钟窗口：
+
+```text
+Candidate consumed       17,231
+Command produced         17,231
+
+Worker 1 consumed         7,387
+Worker 2 consumed         9,845
+Workers consumed total   17,232
+
+Worker 1 results          7,386
+Worker 2 results          9,844
+Results produced total   17,230
+
+Writer consumed          17,232
+PostgreSQL success       17,232
+```
+
+Worker / Result 的少量 ±1 边界来自顺序抓取 metrics 时的 in-flight record。
+
+窗口结束瞬时 lag：
+
+```text
+Candidate total lag = 3
+Command total lag   = 8
+Result total lag    = 4
+```
+
+恢复 1/s 后最终全部归零。
+
+测试期间：
+
+```text
+new retry = 0
+new Command DLQ = 0
+restart = 0
+core errors = 0
+all readiness = 200
+```
+
+因此：
+
+> 在当前服务器、当前测试数据分布、3 Kafka partitions 和 2 classifier-workers 条件下，53 events/s 是已经验证的短时持续安全余量。
+
+### 67 events/s upper boundary
+
+```text
+Correctness:        PASS
+Recovery:           PASS
+Sustained capacity: NOT PASS
+```
+
+窗口计数：
+
+```text
+Candidate consumed       28,125
+Command produced         28,125
+Workers consumed total   25,289
+Results produced total   25,287
+Writer consumed          25,289
+PostgreSQL success       25,288
+```
+
+窗口内 total lag：
+
+```text
+sample 01 =   93
+sample 02 =  390
+sample 03 =  684
+sample 04 =  956
+sample 05 = 1238
+sample 06 = 1515
+sample 07 = 1796
+sample 08 = 2074
+sample 09 = 2352
+sample 10 = 2627
+
+window end = 2896
+```
+
+主要积压：
+
+```text
+ClassificationCommand partition 2 lag = 2885
+```
+
+Command partition 0 / 1 仅约 1 条。
+
+当前 mock 只有 7 个固定 `object_id`，Kafka key 使用 `object_id`，测试 partition 分布近似：
+
+```text
+p0 : p1 : p2 ≈ 1 : 2 : 4
+```
+
+67/s 时 hot partition 2 offered load 约：
+
+```text
+67 × 4 / 7 ≈ 38.3 events/s
+```
+
+高于当前该单 partition / 单 Worker 的持续消费能力，因此产生稳定 backlog。
+
+恢复到 1/s 后：
+
+```text
+2803
+→ 2223
+→ 1638
+→ 1053
+→ 462
+→ 0
+```
+
+约 97 秒全部 drain。
+
+因此当前容量结论是：
+
+```text
+33 events/s production peak:
+PASS
+
+53 events/s short-duration safety headroom:
+PASS
+
+67 events/s:
+RECOVERABLE OVERLOAD
+NOT SUSTAINABLE under current key distribution
+```
+
+67/s 的主要限制是当前 Kafka key / partition skew 与单 partition 串行处理能力，不能简单解释为 GPU 总体饱和，也不能据此宣称系统硬件最大吞吐为 53/s。
+
+### Load 测试边界
+
+当前 mock 重复发送有限的一组确定性 `object_id / revision`。
+
+因此上述测试验证：
+
+```text
+实时消息传输
+Kafka producer / consumer
+LightCurve HTTP
+Triton inference
+双 Worker 并行
+Result Writer
+PostgreSQL 幂等写路径
+```
+
+不等价于验证：
+
+```text
+同等速率的全新 ClassificationRun INSERT/s
+```
+
+长时间 Soak：
+
+```text
+DEFERRED / NOT EXECUTED
+```
+
+短时负载结果不应描述为长时间稳定性验证。
 
 ---
 
 ## Transactional Outbox
 
-阶段 6 不实现：
+当前不实现：
 
 ```text
 classification.updated
@@ -1289,16 +1759,16 @@ outbox_events
 Transactional Outbox Publisher
 ```
 
-并且禁止：
+并禁止：
 
 ```text
 PostgreSQL commit
 → 直接 Kafka publish classification.updated
 ```
 
-因为这会产生数据库提交成功、Kafka 事件丢失的双写窗口。
+避免引入数据库提交成功但 Kafka 事件丢失的双写窗口。
 
-当前状态：
+状态：
 
 ```text
 classification.updated：DEFERRED
@@ -1315,49 +1785,61 @@ Transactional Outbox：DEFERRED
 | --- | --- |
 | PostgreSQL Migration | `VERIFIED_CI` |
 | Classification Repository | `VERIFIED_CI` |
-| PostgreSQL Repository 本地真实测试 | `VERIFIED_LOCAL` |
-| Result Writer → PostgreSQL 本地 E2E | `VERIFIED_LOCAL` |
-| 独立服务器 PostgreSQL | `DEFERRED` |
-| Kafka Publisher | `VERIFIED_CI` |
-| Kafka ConsumerRunner | `VERIFIED_CI` |
-| 真实 Kafka Broker | `DEFERRED` |
-| Candidate Orchestrator | `VERIFIED_CI` |
+| 独立服务器 PostgreSQL | `VERIFIED_SERVER` |
+| Kafka Publisher / Consumer 基础 | `VERIFIED_CI` |
+| Kafka SCRAM-SHA-256 | `VERIFIED_SERVER` |
+| Kafka 真实 Broker | `VERIFIED_SERVER` |
+| Kafka 单 Broker 故障恢复 | `VERIFIED_SERVER` |
+| Candidate Orchestrator | `VERIFIED_CI / VERIFIED_SERVER` |
 | LightCurveRevision Reader / Prepare | `VERIFIED_CI` |
-| LightCurve HTTP Adapter | `VERIFIED_CI` |
-| 真实上游 LightCurve 服务联调 | `DEFERRED` |
+| LightCurve HTTP Adapter | `VERIFIED_CI / VERIFIED_SERVER` |
 | ClassificationInputPreparer | `VERIFIED_CI` |
 | Serving Bundle Loader | `VERIFIED_CI` |
 | Triton Client / Codec / Contract Gate | `VERIFIED_CI` |
 | VariableStarClassifier Adapter | `VERIFIED_CI` |
 | 真实 Triton | `VERIFIED_SERVER` |
-| ClassificationCommand Decoder | `VERIFIED_CI` |
-| Classification Worker | `VERIFIED_CI` |
-| Worker Error Classification | `VERIFIED_CI` |
-| Command Retry / DLQ | `VERIFIED_CI` |
-| Result Publish / Command Offset | `VERIFIED_CI` |
-| ClassificationResult Decoder | `VERIFIED_CI` |
-| Classification Result Writer | `VERIFIED_CI` |
-| Result DLQ / Result Offset | `VERIFIED_CI` |
-| Runtime Composition | `VERIFIED_CI` |
-| 应用层 Command → Run E2E | `VERIFIED_CI` |
+| Classification Worker | `VERIFIED_CI / VERIFIED_SERVER` |
+| 长期 RETRYABLE | `VERIFIED_CI / VERIFIED_SERVER` |
+| Rebalance Yield / Fresh Consumer Session | `VERIFIED_CI / VERIFIED_SERVER` |
+| Command DLQ / Offset | `VERIFIED_CI / VERIFIED_SERVER` |
+| Classification Result Writer | `VERIFIED_CI / VERIFIED_SERVER` |
+| Result Retry / Rebalance Yield | `VERIFIED_CI / VERIFIED_SERVER` |
+| Result DLQ / Offset | `VERIFIED_CI / VERIFIED_SERVER` |
+| Kafka + LightCurve + Triton + PostgreSQL 联合 E2E | `VERIFIED_SERVER` |
+| Structured Logging | `VERIFIED_CI / VERIFIED_SERVER` |
+| Management `/live` `/ready` `/metrics` | `VERIFIED_CI / VERIFIED_SERVER` |
+| Kafka / HTTP / PostgreSQL Metrics | `VERIFIED_CI / VERIFIED_SERVER` |
+| govulncheck | `VERIFIED_CI` |
+| Gitleaks full-history scan | `VERIFIED_CI` |
+| PostgreSQL PITR | `VERIFIED_SERVER` |
+| PostgreSQL second-disk WAL mirror | `VERIFIED_SERVER` |
+| PostgreSQL backup automation | `VERIFIED_SERVER` |
+| Runbooks | `VERIFIED_CI` |
+| 33 events/s production peak | `PASS / SERVER_VERIFIED` |
+| 53 events/s safety headroom | `PASS / SERVER_VERIFIED` |
+| 67 events/s upper boundary | `RECOVERABLE_OVERLOAD` |
+| Long-duration Soak | `DEFERRED` |
 | Transactional Outbox | `DEFERRED` |
-| Kafka + LightCurve + Triton + PostgreSQL 联合 E2E | `DEFERRED` |
+| Model Artifact Recovery | `DEFERRED / DOCUMENTED RISK` |
 | 正式科学批准 | `PENDING_FORMAL_BENCHMARK` |
 
 状态含义：
 
 ```text
-VERIFIED_LOCAL
-已在本地真实依赖环境执行通过
-
 VERIFIED_CI
-代码和普通自动化门禁已由 GitHub Actions 验证
+代码和自动化门禁已经由 GitHub Actions 验证
 
 VERIFIED_SERVER
-已在独立服务器环境验证
+已经在独立服务器真实依赖环境验证
+
+PASS / SERVER_VERIFIED
+指定服务器验收场景已经明确通过
+
+RECOVERABLE_OVERLOAD
+正确性和恢复通过，但该负载不能持续零积压运行
 
 DEFERRED
-明确延后，不能描述为已验证
+明确延后，不应描述为已验证
 
 PENDING_FORMAL_BENCHMARK
 工程链路允许继续，但正式科学批准尚未完成
@@ -1365,75 +1847,45 @@ PENDING_FORMAL_BENCHMARK
 
 ---
 
-## 阶段边界
+## 当前工程结论
 
-阶段 1：
+当前实时分类主链已经具备：
 
 ```text
-工程基础、Protobuf、确定性身份、分类器 Port
+固定 revision 输入
+确定性 job_id / run_id
+精确 Serving Bundle
+真实 Triton
+Kafka 至少一次语义
+幂等 PostgreSQL 持久化
+PERMANENT DLQ
+长期 RETRYABLE
+rebalance-safe consumer session recovery
+结构化日志
+Prometheus metrics
+健康检查
+安全 CI
+数据库 PITR
+备份自动化
+Runbooks
+服务器 E2E
+服务器负载证据
 ```
 
-阶段 2：
+当前工程状态：
 
 ```text
-PostgreSQL Repository + Kafka 基础设施
+PRODUCTION_PREACCEPTANCE_CORE_COMPLETE
 ```
 
-阶段 3：
+明确保留的后续工作和风险：
 
 ```text
-CandidateEvent → ClassificationCommand
-```
-
-阶段 4：
-
-```text
-fixed LightCurveRevision → ClassificationInput
-```
-
-阶段 5：
-
-```text
-Serving Bundle → Triton → ClassificationOutput
-```
-
-阶段 6：
-
-```text
-ClassificationCommand
-→ Worker
-→ ClassificationResult
-→ Result Writer
-→ ClassificationRun
-→ CurrentClassification
-```
-
-阶段 6 工程闭环状态：
-
-```text
-CLOSED
-```
-
-继续保留的外部验证边界：
-
-```text
-真实 Kafka Broker：DEFERRED
-真实上游 LightCurve 服务：DEFERRED
-独立服务器 PostgreSQL：DEFERRED
-完整联合服务器 E2E：DEFERRED
-Transactional Outbox：DEFERRED
-正式科学批准：PENDING_FORMAL_BENCHMARK
-```
-
-下一阶段：
-
-```text
-阶段 7：查询 API、GUI 与人工复核
-```
-
-后续：
-
-```text
-阶段 8：可靠性、可观测性与安全
-阶段 9：Kubernetes 生产化
+Kubernetes 生产化
+长时间 Soak
+Model Artifact Recovery
+更均匀的生产 Kafka key / partition 分布验证
+全新 ClassificationRun 高速持续 INSERT 压力验证
+Transactional Outbox（如后续确实需要 classification.updated）
+正式科学 benchmark / approval
 ```
