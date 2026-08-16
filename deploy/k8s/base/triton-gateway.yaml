@@ -1,0 +1,100 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: triton-gateway-config
+  namespace: variable-star
+data:
+  dynamic.yaml: |
+    http:
+      routers:
+        triton:
+          entryPoints:
+            - inference
+          rule: PathPrefix(`/`)
+          service: triton-backends
+      services:
+        triton-backends:
+          loadBalancer:
+            servers:
+              - url: http://10.3.10.166:18000
+              - url: http://10.3.10.166:18001
+            healthCheck:
+              path: /v2/health/ready
+              interval: 5s
+              timeout: 2s
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: triton-gateway
+  namespace: variable-star
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: triton-gateway
+  template:
+    metadata:
+      labels:
+        app: triton-gateway
+    spec:
+      automountServiceAccountToken: false
+      nodeSelector:
+        kubernetes.io/hostname: dell-poweredge-r750xa
+      containers:
+        - name: traefik
+          image: docker.io/rancher/mirrored-library-traefik:3.7.8
+          imagePullPolicy: Never
+          args:
+            - --entrypoints.inference.address=:8000
+            - --entrypoints.management.address=:8082
+            - --providers.file.filename=/etc/traefik/dynamic.yaml
+            - --providers.file.watch=true
+            - --api.dashboard=false
+            - --ping=true
+            - --ping.entrypoint=management
+            - --log.level=INFO
+            - --log.format=json
+            - --accesslog=true
+            - --accesslog.format=json
+          ports:
+            - name: inference
+              containerPort: 8000
+            - name: management
+              containerPort: 8082
+          readinessProbe:
+            httpGet:
+              path: /ping
+              port: management
+            periodSeconds: 5
+            timeoutSeconds: 2
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /ping
+              port: management
+            periodSeconds: 10
+            timeoutSeconds: 2
+            failureThreshold: 3
+          volumeMounts:
+            - name: config
+              mountPath: /etc/traefik/dynamic.yaml
+              subPath: dynamic.yaml
+              readOnly: true
+      volumes:
+        - name: config
+          configMap:
+            name: triton-gateway-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: triton-gateway
+  namespace: variable-star
+spec:
+  selector:
+    app: triton-gateway
+  ports:
+    - name: inference
+      port: 8000
+      targetPort: inference
