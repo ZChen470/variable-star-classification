@@ -67,6 +67,13 @@ jobs:
           make --version
           gitleaks version
 
+      - name: Verify Kubernetes manifests
+        shell: bash
+        run: |
+          kubectl version --client
+          kubectl kustomize deploy/k8s/base > /tmp/variable-star-k8s.yaml
+          kubectl apply --dry-run=client --validate=false -f /tmp/variable-star-k8s.yaml > /dev/null
+
       - name: Run vulnerability scan
         run: govulncheck ./...
 
