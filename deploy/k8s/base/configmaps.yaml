@@ -36,7 +36,7 @@ data:
   CLASSIFICATION_COMMAND_DLQ_TOPIC: "light-curve-classification-command-dlq"
   CLASSIFICATION_RESULT_TOPIC: "light-curve-classification-result"
   LIGHT_CURVE_BASE_URL: "http://10.3.10.166:18081"
-  TRITON_BASE_URL: "http://variable-star-triton:8000"
+  TRITON_BASE_URL: "http://triton-gateway:8000"
   MODEL_BUNDLE_VERSION: "variable-classifier-2026-07-003"
   MODEL_BUNDLE_MANIFEST_PATH: "/config/model-bundle-manifest-v2.yaml"
   MANAGEMENT_LISTEN_ADDR: "0.0.0.0:9091"
