@@ -6,3 +6,4 @@ resources:
   - candidate-orchestrator.yaml
   - classifier-worker.yaml
   - classification-result-writer.yaml
+  - variable-star-triton.yaml

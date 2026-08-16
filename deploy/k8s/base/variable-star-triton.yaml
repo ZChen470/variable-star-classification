@@ -1,0 +1,86 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: variable-star-triton
+  namespace: variable-star
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: variable-star-triton
+  template:
+    metadata:
+      labels:
+        app: variable-star-triton
+    spec:
+      runtimeClassName: nvidia
+      terminationGracePeriodSeconds: 30
+      containers:
+        - name: triton
+          image: docker.io/library/variable-star-triton:s9-registry-release-candidate
+          imagePullPolicy: Never
+          command:
+            - tritonserver
+          args:
+            - --model-repository=/models
+            - --disable-auto-complete-config
+            - --strict-readiness=true
+            - --exit-on-error=false
+            - --model-load-thread-count=1
+            - --cuda-memory-pool-byte-size=0:268435456
+            - --allow-grpc=false
+            - --allow-metrics=false
+          ports:
+            - name: http
+              containerPort: 8000
+              protocol: TCP
+          resources:
+            limits:
+              nvidia.com/gpu: "1"
+          startupProbe:
+            httpGet:
+              path: /v2/health/live
+              port: http
+              scheme: HTTP
+            periodSeconds: 5
+            timeoutSeconds: 1
+            failureThreshold: 60
+            successThreshold: 1
+          readinessProbe:
+            httpGet:
+              path: /v2/health/ready
+              port: http
+              scheme: HTTP
+            periodSeconds: 5
+            timeoutSeconds: 1
+            failureThreshold: 3
+            successThreshold: 1
+          livenessProbe:
+            httpGet:
+              path: /v2/health/live
+              port: http
+              scheme: HTTP
+            periodSeconds: 10
+            timeoutSeconds: 1
+            failureThreshold: 3
+            successThreshold: 1
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: variable-star-triton
+  namespace: variable-star
+spec:
+  type: ClusterIP
+  internalTrafficPolicy: Cluster
+  ipFamilyPolicy: SingleStack
+  selector:
+    app: variable-star-triton
+  ports:
+    - name: http
+      port: 8000
+      targetPort: http
+      protocol: TCP
+  sessionAffinity: None
