@@ -1,0 +1,70 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: classifier-worker
+  namespace: variable-star
+spec:
+  replicas: 2
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+      maxSurge: 0
+  selector:
+    matchLabels:
+      app: classifier-worker
+  template:
+    metadata:
+      labels:
+        app: classifier-worker
+    spec:
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 60
+      containers:
+        - name: classifier-worker
+          image: ghcr.io/zchen470/variable-star-classifier-worker@sha256:bf5c388d56f3bc916d96f0403087a86b8935982a82baedc971d1e1c7cf146a22
+          imagePullPolicy: IfNotPresent
+          envFrom:
+            - configMapRef:
+                name: classifier-worker-config
+            - secretRef:
+                name: classifier-worker-secret
+          ports:
+            - name: management
+              containerPort: 9091
+          volumeMounts:
+            - name: serving-manifest
+              mountPath: /config/model-bundle-manifest-v2.yaml
+              subPath: model-bundle-manifest-v2.yaml
+              readOnly: true
+          startupProbe:
+            httpGet:
+              path: /live
+              port: management
+            periodSeconds: 2
+            failureThreshold: 45
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: management
+            periodSeconds: 5
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /live
+              port: management
+            periodSeconds: 10
+            failureThreshold: 3
+          securityContext:
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            seccompProfile:
+              type: RuntimeDefault
+      volumes:
+        - name: serving-manifest
+          configMap:
+            name: classifier-worker-serving-manifest
+            defaultMode: 0444

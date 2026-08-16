@@ -1,0 +1,56 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: candidate-orchestrator
+  namespace: variable-star
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: candidate-orchestrator
+  template:
+    metadata:
+      labels:
+        app: candidate-orchestrator
+    spec:
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 30
+      containers:
+        - name: candidate-orchestrator
+          image: ghcr.io/zchen470/variable-star-candidate-orchestrator@sha256:487b6a331bb9eb77a66dbe4f9b5d2328205f96c611f7a97de59889e5b0d43d2c
+          imagePullPolicy: IfNotPresent
+          envFrom:
+            - configMapRef:
+                name: candidate-orchestrator-config
+            - secretRef:
+                name: candidate-orchestrator-secret
+          ports:
+            - name: management
+              containerPort: 9091
+          startupProbe:
+            httpGet:
+              path: /live
+              port: management
+            periodSeconds: 2
+            failureThreshold: 30
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: management
+            periodSeconds: 5
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /live
+              port: management
+            periodSeconds: 10
+            failureThreshold: 3
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            seccompProfile:
+              type: RuntimeDefault

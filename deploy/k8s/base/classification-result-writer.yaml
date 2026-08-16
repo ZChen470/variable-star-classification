@@ -1,0 +1,57 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: classification-result-writer
+  namespace: variable-star
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: classification-result-writer
+  template:
+    metadata:
+      labels:
+        app: classification-result-writer
+    spec:
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 30
+      containers:
+        - name: classification-result-writer
+          image: ghcr.io/zchen470/variable-star-classification-result-writer@sha256:f50d00172abbc15872fd7f87cf9fd9331786126f6d692cb5fef322bd224cbc51
+          imagePullPolicy: IfNotPresent
+          envFrom:
+            - configMapRef:
+                name: classification-result-writer-config
+            - secretRef:
+                name: classification-result-writer-secret
+          ports:
+            - name: management
+              containerPort: 9091
+          startupProbe:
+            httpGet:
+              path: /live
+              port: management
+            periodSeconds: 2
+            failureThreshold: 30
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: management
+            periodSeconds: 5
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /live
+              port: management
+            periodSeconds: 10
+            failureThreshold: 3
+          securityContext:
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            seccompProfile:
+              type: RuntimeDefault

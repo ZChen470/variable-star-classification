@@ -1,0 +1,42 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: candidate-orchestrator-config
+  namespace: variable-star
+data:
+  KAFKA_BROKERS: "10.3.10.166:9092,10.3.10.166:9093,10.3.10.166:9094"
+  KAFKA_CONSUMER_GROUP: "variable-star-candidate-group"
+  CANDIDATE_TOPIC: "variable-star-candidate"
+  CANDIDATE_DLQ_TOPIC: "variable-star-candidate-dlq"
+  CLASSIFICATION_COMMAND_TOPIC: "light-curve-classification-command"
+  MODEL_BUNDLE_VERSION: "variable-classifier-2026-07-003"
+  MANAGEMENT_LISTEN_ADDR: "0.0.0.0:9091"
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: classification-result-writer-config
+  namespace: variable-star
+data:
+  KAFKA_BROKERS: "10.3.10.166:9092,10.3.10.166:9093,10.3.10.166:9094"
+  KAFKA_CONSUMER_GROUP: "light-curve-classification-result-group"
+  CLASSIFICATION_RESULT_TOPIC: "light-curve-classification-result"
+  CLASSIFICATION_RESULT_DLQ_TOPIC: "light-curve-classification-result-dlq"
+  MANAGEMENT_LISTEN_ADDR: "0.0.0.0:9091"
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: classifier-worker-config
+  namespace: variable-star
+data:
+  KAFKA_BROKERS: "10.3.10.166:9092,10.3.10.166:9093,10.3.10.166:9094"
+  KAFKA_CONSUMER_GROUP: "light-curve-classification-command-group"
+  CLASSIFICATION_COMMAND_TOPIC: "light-curve-classification-command"
+  CLASSIFICATION_COMMAND_DLQ_TOPIC: "light-curve-classification-command-dlq"
+  CLASSIFICATION_RESULT_TOPIC: "light-curve-classification-result"
+  LIGHT_CURVE_BASE_URL: "http://10.3.10.166:18081"
+  TRITON_BASE_URL: "http://variable-star-triton:8000"
+  MODEL_BUNDLE_VERSION: "variable-classifier-2026-07-003"
+  MODEL_BUNDLE_MANIFEST_PATH: "/config/model-bundle-manifest-v2.yaml"
+  MANAGEMENT_LISTEN_ADDR: "0.0.0.0:9091"
