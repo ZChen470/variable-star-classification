@@ -1,0 +1,39 @@
+name: Mirror Grafana Image
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  mirror:
+    name: Mirror Grafana 13.1.3
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Pull official Grafana image
+        run: docker pull --platform linux/amd64 docker.io/grafana/grafana:13.1.3
+
+      - name: Push Grafana image to GHCR
+        run: |
+          docker tag \
+            docker.io/grafana/grafana:13.1.3 \
+            ghcr.io/zchen470/variable-star-grafana:13.1.3
+          docker push ghcr.io/zchen470/variable-star-grafana:13.1.3
+
+      - name: Verify mirrored image
+        run: |
+          docker pull ghcr.io/zchen470/variable-star-grafana:13.1.3
+          docker image inspect \
+            ghcr.io/zchen470/variable-star-grafana:13.1.3 \
+            --format 'image_id={{.Id}} repo_digests={{json .RepoDigests}}'
