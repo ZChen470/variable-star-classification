@@ -1,0 +1,46 @@
+name: Mirror kube-state-metrics Image
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  mirror:
+    name: Mirror kube-state-metrics v2.19.1
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Log in to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Pull official kube-state-metrics image
+        run: |
+          docker pull \
+            --platform linux/amd64 \
+            registry.k8s.io/kube-state-metrics/kube-state-metrics:v2.19.1
+
+      - name: Push kube-state-metrics image to GHCR
+        run: |
+          docker tag \
+            registry.k8s.io/kube-state-metrics/kube-state-metrics:v2.19.1 \
+            ghcr.io/zchen470/variable-star-kube-state-metrics:v2.19.1
+
+          docker push \
+            ghcr.io/zchen470/variable-star-kube-state-metrics:v2.19.1
+
+      - name: Verify mirrored image
+        run: |
+          docker pull \
+            ghcr.io/zchen470/variable-star-kube-state-metrics:v2.19.1
+
+          docker image inspect \
+            ghcr.io/zchen470/variable-star-kube-state-metrics:v2.19.1 \
+            --format 'image_id={{.Id}} repo_digests={{json .RepoDigests}}'
