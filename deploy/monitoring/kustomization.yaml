@@ -13,5 +13,13 @@ configMapGenerator:
       labels:
         grafana_dashboard: "1"
 
+  - name: grafana-dashboard-kafka-retry-dlq
+    namespace: monitoring
+    files:
+      - kafka-retry-dlq.json=dashboards/kafka-retry-dlq.json
+    options:
+      labels:
+        grafana_dashboard: "1"
+
 generatorOptions:
   disableNameSuffixHash: true
