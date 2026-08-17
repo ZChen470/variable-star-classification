@@ -21,5 +21,13 @@ configMapGenerator:
       labels:
         grafana_dashboard: "1"
 
+  - name: grafana-dashboard-kubernetes-go-postgresql
+    namespace: monitoring
+    files:
+      - kubernetes-go-postgresql.json=dashboards/kubernetes-go-postgresql.json
+    options:
+      labels:
+        grafana_dashboard: "1"
+
 generatorOptions:
   disableNameSuffixHash: true
