@@ -1,0 +1,21 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: variable-star-applications
+  namespace: variable-star
+  labels:
+    monitoring.variable-star.io/enabled: "true"
+spec:
+  selector:
+    matchExpressions:
+      - key: app
+        operator: In
+        values:
+          - candidate-orchestrator
+          - classifier-worker
+          - classification-result-writer
+  podMetricsEndpoints:
+    - port: management
+      path: /metrics
+      interval: 15s
+      scrapeTimeout: 5s

@@ -1,0 +1,92 @@
+# kube-prometheus-stack 88.3.0
+#
+# S9 monitoring baseline:
+# - Prometheus keeps TSDB data on a local-path PVC on the physical node.
+# - Grafana is stateless; dashboards and datasources will be provisioned from Git.
+# - Application metrics are discovered through explicit PodMonitor labels.
+# - Alertmanager is deferred until dashboard/query semantics are verified.
+
+alertmanager:
+  enabled: false
+
+grafana:
+  enabled: true
+
+  image:
+    registry: ghcr.io
+    repository: zchen470/variable-star-grafana
+    tag: ""
+    sha: "e27e68cfd5795c1bea54950766078a02e84dfa3bafe0a4d0e5382f713dfd8e4e"
+    pullPolicy: IfNotPresent
+
+  persistence:
+    enabled: false
+
+  initChownData:
+    enabled: false
+
+  nodeSelector:
+    kubernetes.io/hostname: dell-poweredge-r750xa
+
+  service:
+    enabled: true
+    type: ClusterIP
+
+  ingress:
+    enabled: false
+
+  admin:
+    existingSecret: variable-star-grafana-admin
+    userKey: admin-user
+    passwordKey: admin-password
+
+  testFramework:
+    enabled: false
+
+kubeStateMetrics:
+  enabled: true
+
+kube-state-metrics:
+  image:
+    registry: ghcr.io
+    repository: zchen470/variable-star-kube-state-metrics
+    tag: ""
+    sha: "sha256:e1bca480e86f9b2086e0549a02d7a879d8077889f54758b33d2c19723ef1c34f"
+    pullPolicy: IfNotPresent
+
+nodeExporter:
+  enabled: true
+
+prometheus:
+  enabled: true
+
+  prometheusSpec:
+    replicas: 1
+    retention: 7d
+
+    persistentVolumeClaimRetentionPolicy:
+      whenDeleted: Retain
+      whenScaled: Retain
+
+    nodeSelector:
+      kubernetes.io/hostname: dell-poweredge-r750xa
+
+    podMonitorSelectorNilUsesHelmValues: false
+
+    podMonitorSelector:
+      matchLabels:
+        monitoring.variable-star.io/enabled: "true"
+
+    podMonitorNamespaceSelector:
+      matchLabels:
+        kubernetes.io/metadata.name: variable-star
+
+    storageSpec:
+      volumeClaimTemplate:
+        spec:
+          storageClassName: local-path
+          accessModes:
+            - ReadWriteOnce
+          resources:
+            requests:
+              storage: 20Gi
