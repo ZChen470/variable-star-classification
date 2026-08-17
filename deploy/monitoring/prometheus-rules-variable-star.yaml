@@ -1,0 +1,170 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: variable-star-application-alerts
+  namespace: variable-star
+  labels:
+    release: monitoring
+spec:
+  groups:
+    - name: variable-star.application
+      rules:
+        - alert: TritonBackendDown
+          expr: |
+            traefik_service_server_up{
+              service="triton-backends@file"
+            } == 0
+          for: 1m
+          labels:
+            severity: warning
+            component: triton
+          annotations:
+            summary: "Triton backend unavailable through Gateway"
+            description: "Traefik reports Triton backend {{ $labels.url }} as unavailable for more than 1 minute."
+
+        - alert: GatewayHigh5xxRatio
+          expr: |
+            (
+              sum(
+                rate(
+                  traefik_entrypoint_requests_total{
+                    entrypoint="inference",
+                    code=~"5.."
+                  }[5m]
+                )
+              )
+              /
+              clamp_min(
+                sum(
+                  rate(
+                    traefik_entrypoint_requests_total{
+                      entrypoint="inference"
+                    }[5m]
+                  )
+                ),
+                0.001
+              )
+            ) > 0.05
+            and
+            sum(
+              rate(
+                traefik_entrypoint_requests_total{
+                  entrypoint="inference"
+                }[5m]
+              )
+            ) > 0.1
+          for: 2m
+          labels:
+            severity: critical
+            component: gateway
+          annotations:
+            summary: "Gateway inference 5xx ratio is high"
+            description: "Inference Gateway 5xx ratio has remained above 5% while receiving meaningful traffic."
+
+        - alert: TritonInferenceFailureDetected
+          expr: |
+            sum by (service, reason) (
+              increase(
+                nv_inference_request_failure{
+                  service=~"triton-[ab]-external-metrics",
+                  model="variable_star_classifier"
+                }[5m]
+              )
+            ) > 0
+          for: 1m
+          labels:
+            severity: warning
+            component: triton
+          annotations:
+            summary: "Triton inference failure detected"
+            description: "Top-level variable_star_classifier failures were observed on {{ $labels.service }} with reason {{ $labels.reason }}."
+
+        - alert: ClassifierWorkerRetryStuck
+          expr: |
+            max by (pod) (
+              astro_classification_command_retry_age_seconds
+            ) > 60
+            and on (pod)
+            max by (pod) (
+              astro_classification_command_retrying
+            ) > 0
+          for: 2m
+          labels:
+            severity: warning
+            component: classifier-worker
+          annotations:
+            summary: "Classifier worker is stuck retrying"
+            description: "Classifier worker {{ $labels.pod }} has been continuously retrying the current command for more than 60 seconds."
+
+        - alert: KafkaGroupManageErrorDetected
+          expr: |
+            sum(
+              increase(
+                astro_kafka_group_manage_errors_total[5m]
+              )
+            ) > 0
+          for: 1m
+          labels:
+            severity: warning
+            component: kafka
+          annotations:
+            summary: "Kafka consumer-group management error detected"
+            description: "At least one Kafka consumer-group management error occurred during the last 5 minutes."
+
+        - alert: PostgreSQLWriteFailureDetected
+          expr: |
+            (
+              sum(
+                increase(
+                  astro_postgres_writes_total{
+                    result!="success"
+                  }[5m]
+                )
+              )
+              or vector(0)
+            ) > 0
+          for: 1m
+          labels:
+            severity: warning
+            component: postgresql
+          annotations:
+            summary: "PostgreSQL classification write failure detected"
+            description: "At least one classification-result PostgreSQL write failure occurred during the last 5 minutes."
+
+        - alert: DLQPublishDetected
+          expr: |
+            (
+              sum(
+                increase(
+                  astro_kafka_produce_records_total{
+                    topic=~".*dlq.*",
+                    result="success"
+                  }[5m]
+                )
+              ) > 0
+            )
+            or
+            (
+              sum(
+                (
+                  astro_kafka_produce_records_total{
+                    topic=~".*dlq.*",
+                    result="success"
+                  }
+                )
+                unless
+                (
+                  astro_kafka_produce_records_total{
+                    topic=~".*dlq.*",
+                    result="success"
+                  } offset 5m
+                )
+              ) > 0
+            )
+          for: 1m
+          labels:
+            severity: warning
+            component: dlq
+          annotations:
+            summary: "Message published to a DLQ"
+            description: "At least one message was successfully published to a dead-letter topic during the last 5 minutes."
