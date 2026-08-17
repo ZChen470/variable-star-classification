@@ -1,0 +1,88 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: triton-a-external-metrics
+  namespace: variable-star
+  labels:
+    monitoring.variable-star.io/component: triton-external-metrics
+    monitoring.variable-star.io/backend: triton-a
+spec:
+  ports:
+    - name: metrics
+      protocol: TCP
+      port: 18002
+      targetPort: 18002
+---
+apiVersion: discovery.k8s.io/v1
+kind: EndpointSlice
+metadata:
+  name: triton-a-external-metrics
+  namespace: variable-star
+  labels:
+    kubernetes.io/service-name: triton-a-external-metrics
+    endpointslice.kubernetes.io/managed-by: variable-star-manual
+addressType: IPv4
+ports:
+  - name: metrics
+    protocol: TCP
+    port: 18002
+endpoints:
+  - addresses:
+      - 10.3.10.166
+    conditions:
+      ready: true
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: triton-b-external-metrics
+  namespace: variable-star
+  labels:
+    monitoring.variable-star.io/component: triton-external-metrics
+    monitoring.variable-star.io/backend: triton-b
+spec:
+  ports:
+    - name: metrics
+      protocol: TCP
+      port: 18003
+      targetPort: 18003
+---
+apiVersion: discovery.k8s.io/v1
+kind: EndpointSlice
+metadata:
+  name: triton-b-external-metrics
+  namespace: variable-star
+  labels:
+    kubernetes.io/service-name: triton-b-external-metrics
+    endpointslice.kubernetes.io/managed-by: variable-star-manual
+addressType: IPv4
+ports:
+  - name: metrics
+    protocol: TCP
+    port: 18003
+endpoints:
+  - addresses:
+      - 10.3.10.166
+    conditions:
+      ready: true
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: triton-external-metrics
+  namespace: variable-star
+  labels:
+    release: monitoring
+spec:
+  serviceDiscoveryRole: EndpointSlice
+  namespaceSelector:
+    matchNames:
+      - variable-star
+  selector:
+    matchLabels:
+      monitoring.variable-star.io/component: triton-external-metrics
+  endpoints:
+    - port: metrics
+      path: /metrics
+      interval: 15s
+      scrapeTimeout: 5s

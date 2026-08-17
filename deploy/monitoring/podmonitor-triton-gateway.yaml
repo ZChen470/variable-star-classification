@@ -1,0 +1,16 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: triton-gateway
+  namespace: variable-star
+  labels:
+    monitoring.variable-star.io/enabled: "true"
+spec:
+  selector:
+    matchLabels:
+      app: triton-gateway
+  podMetricsEndpoints:
+    - port: management
+      path: /metrics
+      interval: 15s
+      scrapeTimeout: 5s

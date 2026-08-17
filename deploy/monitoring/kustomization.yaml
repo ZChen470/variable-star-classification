@@ -3,6 +3,8 @@ kind: Kustomization
 
 resources:
   - podmonitor-variable-star-applications.yaml
+  - podmonitor-triton-gateway.yaml
+  - triton-external-metrics.yaml
 
 configMapGenerator:
   - name: grafana-dashboard-application-operations
@@ -25,6 +27,15 @@ configMapGenerator:
     namespace: monitoring
     files:
       - kubernetes-go-postgresql.json=dashboards/kubernetes-go-postgresql.json
+    options:
+      labels:
+        grafana_dashboard: "1"
+
+
+  - name: grafana-dashboard-gateway-triton
+    namespace: monitoring
+    files:
+      - gateway-triton.json=dashboards/gateway-triton.json
     options:
       labels:
         grafana_dashboard: "1"

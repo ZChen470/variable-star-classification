@@ -53,6 +53,8 @@ spec:
             - --api.dashboard=false
             - --ping=true
             - --ping.entrypoint=management
+            - --metrics.prometheus=true
+            - --metrics.prometheus.entrypoint=management
             - --log.level=INFO
             - --log.format=json
             - --accesslog=true
