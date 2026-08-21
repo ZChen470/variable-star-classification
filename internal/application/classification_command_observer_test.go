@@ -112,6 +112,12 @@ func (observer *classificationCommandObserverTestObserver) DLQPublished() {
 	observer.dlqPublished++
 }
 
+func (observer *classificationCommandObserverTestObserver) CommandStarted() {
+}
+
+func (observer *classificationCommandObserverTestObserver) CommandFinished(time.Duration) {
+}
+
 type classificationCommandObserverTestHandler struct {
 	results []error
 	calls   int

@@ -335,6 +335,7 @@ func run(logger *slog.Logger) error {
 			servingResolver,
 			classifier,
 			publisher,
+			commandObserver,
 			time.Now,
 		)
 	if err != nil {

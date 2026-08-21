@@ -747,6 +747,7 @@ func newClassificationWorkerFixture(
 			servingBundleResolver,
 			classifier,
 			publisher,
+			nil,
 			func() time.Time {
 				return completedAt
 			},

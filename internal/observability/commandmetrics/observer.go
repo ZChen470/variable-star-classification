@@ -17,13 +17,15 @@ import (
 // existing Kafka produce metric already observes successful/error production
 // for the configured DLQ topic.
 type Observer struct {
-	mu             sync.RWMutex
-	now            func() time.Time
-	retrying       bool
-	retryStartedAt time.Time
-	retryAttempts  prometheus.Counter
-	retryingGauge  prometheus.GaugeFunc
-	retryAgeGauge  prometheus.GaugeFunc
+	mu                 sync.RWMutex
+	now                func() time.Time
+	retrying           bool
+	retryStartedAt     time.Time
+	retryAttempts      prometheus.Counter
+	retryingGauge      prometheus.GaugeFunc
+	retryAgeGauge      prometheus.GaugeFunc
+	processingDuration prometheus.Histogram
+	inflight           prometheus.Gauge
 }
 
 var _ application.ClassificationCommandObserver = (*Observer)(nil)
@@ -72,10 +74,30 @@ func newObserver(registerer prometheus.Registerer, now func() time.Time) (*Obser
 		observer.retryAgeSeconds,
 	)
 
+	observer.processingDuration = prometheus.NewHistogram(
+		prometheus.HistogramOpts{
+			Namespace: "astro",
+			Subsystem: "classification_command",
+			Name:      "processing_duration_seconds",
+			Help:      "Time spent processing a ClassificationCommand until result publication succeeds.",
+		},
+	)
+
+	observer.inflight = prometheus.NewGauge(
+		prometheus.GaugeOpts{
+			Namespace: "astro",
+			Subsystem: "classification_command",
+			Name:      "inflight",
+			Help:      "Number of ClassificationCommands currently being processed by this worker.",
+		},
+	)
+
 	for _, collector := range []prometheus.Collector{
 		observer.retryAttempts,
 		observer.retryingGauge,
 		observer.retryAgeGauge,
+		observer.processingDuration,
+		observer.inflight,
 	} {
 		if err := registerer.Register(collector); err != nil {
 			return nil, fmt.Errorf("register classification command metric: %w", err)
@@ -153,4 +175,21 @@ func (observer *Observer) retryAgeSeconds() float64 {
 	}
 
 	return age
+}
+
+func (observer *Observer) CommandStarted() {
+	if observer == nil {
+		return
+	}
+
+	observer.inflight.Inc()
+}
+
+func (observer *Observer) CommandFinished(duration time.Duration) {
+	if observer == nil {
+		return
+	}
+
+	observer.inflight.Dec()
+	observer.processingDuration.Observe(duration.Seconds())
 }

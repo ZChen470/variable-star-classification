@@ -31,6 +31,7 @@ type ClassificationWorkerHandler struct {
 	servingBundleResolver ServingBundleResolver
 	classifier            VariableStarClassifier
 	publisher             MessagePublisher
+	observer              ClassificationCommandObserver
 	now                   func() time.Time
 	logger                *slog.Logger
 }
@@ -49,6 +50,7 @@ func NewClassificationWorkerHandler(
 	servingBundleResolver ServingBundleResolver,
 	classifier VariableStarClassifier,
 	publisher MessagePublisher,
+	observer ClassificationCommandObserver,
 	now func() time.Time,
 ) (*ClassificationWorkerHandler, error) {
 	if commandTopic == "" {
@@ -94,6 +96,7 @@ func NewClassificationWorkerHandler(
 		servingBundleResolver: servingBundleResolver,
 		classifier:            classifier,
 		publisher:             publisher,
+		observer:              classificationCommandObserverOrNoop(observer),
 		now:                   now,
 		logger:                slog.Default(),
 	}, nil
@@ -120,6 +123,14 @@ func (handler *ClassificationWorkerHandler) Handle(
 	if err := ctx.Err(); err != nil {
 		return err
 	}
+
+	started := time.Now()
+
+	handler.observer.CommandStarted()
+
+	defer func() {
+		handler.observer.CommandFinished(time.Since(started))
+	}()
 
 	logger := handler.logger
 	if logger == nil {
