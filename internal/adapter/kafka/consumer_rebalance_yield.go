@@ -21,9 +21,9 @@ type rebalanceYieldConsumerClient interface {
 // When a blocked rebalance requests a yield, the runner stops the current
 // consumer session without committing the yielded record.
 type RebalanceYieldConsumerRunner struct {
-	consumer rebalanceYieldConsumerClient
-	handler  application.MessageHandler
-	yield    *RebalanceYield
+	consumer  rebalanceYieldConsumerClient
+	processor recordProcessor
+	yield     *RebalanceYield
 }
 
 func NewRebalanceYieldConsumerRunner(
@@ -65,8 +65,11 @@ func newRebalanceYieldConsumerRunner(
 ) *RebalanceYieldConsumerRunner {
 	return &RebalanceYieldConsumerRunner{
 		consumer: consumer,
-		handler:  handler,
-		yield:    yield,
+		processor: newSynchronousRecordProcessor(
+			handler,
+			consumer,
+		),
+		yield: yield,
 	}
 }
 
@@ -77,8 +80,8 @@ func (runner *RebalanceYieldConsumerRunner) Run(ctx context.Context) error {
 	if runner == nil || runner.consumer == nil {
 		return errors.New("run rebalance-yield Kafka consumer: nil consumer")
 	}
-	if runner.handler == nil {
-		return errors.New("run rebalance-yield Kafka consumer: nil handler")
+	if runner.processor == nil {
+		return errors.New("run rebalance-yield Kafka consumer: nil processor")
 	}
 	if runner.yield == nil {
 		return errors.New("run rebalance-yield Kafka consumer: nil rebalance yield")
@@ -121,9 +124,9 @@ func (runner *RebalanceYieldConsumerRunner) Run(ctx context.Context) error {
 
 		recordContext, release := runner.yield.Bind(ctx, generation)
 
-		handleErr := runner.handler.Handle(
+		handleErr := runner.processor.Process(
 			recordContext,
-			inboundMessageFromRecord(record),
+			record,
 		)
 
 		if runner.yield.RequestedSince(generation) {
@@ -149,7 +152,6 @@ func (runner *RebalanceYieldConsumerRunner) Run(ctx context.Context) error {
 			)
 		}
 
-		commitErr := runner.consumer.CommitRecords(recordContext, record)
 		yielded := runner.yield.RequestedSince(generation)
 
 		release()
@@ -159,19 +161,6 @@ func (runner *RebalanceYieldConsumerRunner) Run(ctx context.Context) error {
 			return ErrRebalanceYielded
 		}
 
-		if commitErr != nil {
-			if ctx.Err() != nil {
-				return nil
-			}
-
-			return fmt.Errorf(
-				"commit Kafka record topic %q partition %d offset %d: %w",
-				record.Topic,
-				record.Partition,
-				record.Offset,
-				commitErr,
-			)
-		}
 	}
 }
 
