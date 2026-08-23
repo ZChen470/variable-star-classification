@@ -1,0 +1,94 @@
+services:
+  candidate-orchestrator:
+    image: variable-star-candidate-orchestrator:s8
+    environment:
+      KAFKA_BROKERS: kafka-1:19092,kafka-2:19092,kafka-3:19092
+      KAFKA_CONSUMER_GROUP: variable-star-candidate-group
+      KAFKA_SASL_USERNAME: ${KAFKA_SASL_USERNAME}
+      KAFKA_SASL_PASSWORD: ${KAFKA_SASL_PASSWORD}
+      CANDIDATE_TOPIC: variable-star-candidate
+      CLASSIFICATION_COMMAND_TOPIC: light-curve-classification-command
+      CANDIDATE_DLQ_TOPIC: variable-star-candidate-dlq
+      MODEL_BUNDLE_VERSION: ${MODEL_BUNDLE_VERSION}
+      MANAGEMENT_LISTEN_ADDR: 0.0.0.0:9091
+    ports:
+      - "127.0.0.1:19091:9091"
+    networks:
+      - kafka
+    stop_grace_period: 10s
+
+  classifier-worker:
+    image: variable-star-classifier-worker:s8
+    environment:
+      KAFKA_BROKERS: kafka-1:19092,kafka-2:19092,kafka-3:19092
+      KAFKA_CONSUMER_GROUP: light-curve-classification-command-group
+      KAFKA_SASL_USERNAME: ${KAFKA_SASL_USERNAME}
+      KAFKA_SASL_PASSWORD: ${KAFKA_SASL_PASSWORD}
+      CLASSIFICATION_COMMAND_TOPIC: light-curve-classification-command
+      CLASSIFICATION_RESULT_TOPIC: light-curve-classification-result
+      CLASSIFICATION_COMMAND_DLQ_TOPIC: light-curve-classification-command-dlq
+      MODEL_BUNDLE_VERSION: ${MODEL_BUNDLE_VERSION}
+      MODEL_BUNDLE_MANIFEST_PATH: /config/model-bundle-manifest-v2.yaml
+      TRITON_BASE_URL: http://triton:8000
+      POSTGRES_DSN: ${POSTGRES_DSN}
+      LIGHT_CURVE_BASE_URL: http://lightcurve-mock-server:18081
+      MANAGEMENT_LISTEN_ADDR: 0.0.0.0:9091
+    volumes:
+      - ./models/bundles/model-bundle-manifest-v2.yaml:/config/model-bundle-manifest-v2.yaml:ro
+    ports:
+      - "127.0.0.1:19092:9091"
+    networks:
+      - kafka
+      - postgres
+      - e2e
+    stop_grace_period: 10s
+
+  classification-result-writer:
+    image: variable-star-classification-result-writer:s8
+    environment:
+      KAFKA_BROKERS: kafka-1:19092,kafka-2:19092,kafka-3:19092
+      KAFKA_CONSUMER_GROUP: light-curve-classification-result-group
+      KAFKA_SASL_USERNAME: ${KAFKA_SASL_USERNAME}
+      KAFKA_SASL_PASSWORD: ${KAFKA_SASL_PASSWORD}
+      CLASSIFICATION_RESULT_TOPIC: light-curve-classification-result
+      CLASSIFICATION_RESULT_DLQ_TOPIC: light-curve-classification-result-dlq
+      POSTGRES_DSN: ${POSTGRES_DSN}
+      MANAGEMENT_LISTEN_ADDR: 0.0.0.0:9091
+    ports:
+      - "127.0.0.1:19093:9091"
+    networks:
+      - kafka
+      - postgres
+    stop_grace_period: 10s
+
+  lightcurve-mock-server:
+    image: variable-star-lightcurve-mock-server:s8
+    environment:
+      LIGHTCURVE_MOCK_DATA_DIR: /data/lightcurves
+      LIGHTCURVE_MOCK_LISTEN_ADDR: 0.0.0.0:18081
+      KAFKA_BROKERS: kafka-1:19092,kafka-2:19092,kafka-3:19092
+      KAFKA_SASL_USERNAME: ${KAFKA_SASL_USERNAME}
+      KAFKA_SASL_PASSWORD: ${KAFKA_SASL_PASSWORD}
+      CANDIDATE_TOPIC: variable-star-candidate
+      CANDIDATE_RATE_PER_SECOND: "1"
+    volumes:
+      - ./runtime-data/lightcurves:/data/lightcurves:ro
+    ports:
+      - "127.0.0.1:18081:18081"
+    networks:
+      - kafka
+      - e2e
+    stop_grace_period: 10s
+
+networks:
+  kafka:
+    external: true
+    name: kafka_default
+
+  postgres:
+    external: true
+    name: postgres_default
+
+  e2e:
+    external: true
+    name: variable-star-e2e

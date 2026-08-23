@@ -18,6 +18,8 @@ type commitManager struct {
 	maxBatchSize  int
 	flushInterval time.Duration
 
+	pendingCount int
+
 	addCh chan *kgo.Record
 
 	flushRequestCh chan struct{}
@@ -77,14 +79,18 @@ func (manager *commitManager) Start(ctx context.Context) {
 	go manager.run(ctx)
 }
 
-func (manager *commitManager) Add(record *kgo.Record) error {
+func (manager *commitManager) AddWatermark(record *kgo.Record) error {
+
 	if record == nil {
-		return errors.New("add commit record: nil record")
+		return errors.New(
+			"add commit watermark: nil record",
+		)
 	}
 
 	select {
 	case manager.addCh <- record:
 		return nil
+
 	case <-manager.stopCh:
 		return ErrCommitManagerStopped
 	}
@@ -95,29 +101,31 @@ func (manager *commitManager) run(ctx context.Context) {
 
 	ticker := time.NewTicker(manager.flushInterval)
 	defer ticker.Stop()
-	count := 0
 
 	for {
 		select {
 
 		case record := <-manager.addCh:
+			if record == nil {
+				continue
+			}
 			if err := manager.batcher.Add(record); err != nil {
 				continue
 			}
-			count++
+			manager.pendingCount++
 
-			if count >= manager.maxBatchSize {
-				manager.requestFlush()
+			if manager.pendingCount >= manager.maxBatchSize {
+				manager.RequestFlush()
 			}
 
 		case <-manager.flushRequestCh:
 			if manager.batcher.Flush(ctx) == nil {
-				count = 0
+				manager.pendingCount = 0
 			}
 
 		case <-ticker.C:
 			if manager.batcher.Flush(ctx) == nil {
-				count = 0
+				manager.pendingCount = 0
 			}
 
 		case <-manager.stopCh: // 排空 addCh 并处理 batcher
@@ -152,7 +160,7 @@ func (manager *commitManager) run(ctx context.Context) {
 	}
 }
 
-func (manager *commitManager) requestFlush() {
+func (manager *commitManager) RequestFlush() {
 	select {
 	case manager.flushRequestCh <- struct{}{}:
 	default:
