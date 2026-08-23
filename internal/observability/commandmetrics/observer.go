@@ -19,12 +19,13 @@ import (
 type Observer struct {
 	mu                 sync.RWMutex
 	now                func() time.Time
-	retrying           bool
+	retrying           int
 	retryStartedAt     time.Time
 	retryAttempts      prometheus.Counter
 	retryingGauge      prometheus.GaugeFunc
 	retryAgeGauge      prometheus.GaugeFunc
 	processingDuration prometheus.Histogram
+	stageDuration      *prometheus.HistogramVec
 	inflight           prometheus.Gauge
 }
 
@@ -59,7 +60,7 @@ func newObserver(registerer prometheus.Registerer, now func() time.Time) (*Obser
 			Namespace: "astro",
 			Subsystem: "classification_command",
 			Name:      "retrying",
-			Help:      "Whether this worker is currently retrying a ClassificationCommand.",
+			Help:      "Number of ClassificationCommands currently in retry state.",
 		},
 		observer.retryingValue,
 	)
@@ -79,7 +80,7 @@ func newObserver(registerer prometheus.Registerer, now func() time.Time) (*Obser
 			Namespace: "astro",
 			Subsystem: "classification_command",
 			Name:      "processing_duration_seconds",
-			Help:      "Time spent processing a ClassificationCommand until result publication succeeds.",
+			Help:      "Time spent in one ClassificationWorker attempt, including failed attempts.",
 		},
 	)
 
@@ -92,11 +93,22 @@ func newObserver(registerer prometheus.Registerer, now func() time.Time) (*Obser
 		},
 	)
 
+	observer.stageDuration = prometheus.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Namespace: "astro",
+			Subsystem: "classification_command",
+			Name:      "stage_duration_seconds",
+			Help:      "Time spent in each low-cardinality ClassificationCommand processing stage, including failed attempts.",
+		},
+		[]string{"stage"},
+	)
+
 	for _, collector := range []prometheus.Collector{
 		observer.retryAttempts,
 		observer.retryingGauge,
 		observer.retryAgeGauge,
 		observer.processingDuration,
+		observer.stageDuration,
 		observer.inflight,
 	} {
 		if err := registerer.Register(collector); err != nil {
@@ -115,12 +127,10 @@ func (observer *Observer) RetryStarted() {
 	observer.mu.Lock()
 	defer observer.mu.Unlock()
 
-	if observer.retrying {
-		return
+	observer.retrying++
+	if observer.retrying == 1 {
+		observer.retryStartedAt = observer.now()
 	}
-
-	observer.retrying = true
-	observer.retryStartedAt = observer.now()
 }
 
 func (observer *Observer) RetryAttempted() {
@@ -139,8 +149,12 @@ func (observer *Observer) RetryFinished() {
 	observer.mu.Lock()
 	defer observer.mu.Unlock()
 
-	observer.retrying = false
-	observer.retryStartedAt = time.Time{}
+	if observer.retrying > 0 {
+		observer.retrying--
+	}
+	if observer.retrying == 0 {
+		observer.retryStartedAt = time.Time{}
+	}
 }
 
 func (*Observer) DLQPublished() {
@@ -154,18 +168,14 @@ func (observer *Observer) retryingValue() float64 {
 	observer.mu.RLock()
 	defer observer.mu.RUnlock()
 
-	if observer.retrying {
-		return 1
-	}
-
-	return 0
+	return float64(observer.retrying)
 }
 
 func (observer *Observer) retryAgeSeconds() float64 {
 	observer.mu.RLock()
 	defer observer.mu.RUnlock()
 
-	if !observer.retrying || observer.retryStartedAt.IsZero() {
+	if observer.retrying == 0 || observer.retryStartedAt.IsZero() {
 		return 0
 	}
 
@@ -192,4 +202,15 @@ func (observer *Observer) CommandFinished(duration time.Duration) {
 
 	observer.inflight.Dec()
 	observer.processingDuration.Observe(duration.Seconds())
+}
+
+func (observer *Observer) StageFinished(
+	stage application.ClassificationCommandStage,
+	duration time.Duration,
+) {
+	if observer == nil {
+		return
+	}
+
+	observer.stageDuration.WithLabelValues(string(stage)).Observe(duration.Seconds())
 }

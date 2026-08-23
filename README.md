@@ -219,6 +219,7 @@ gen/go/astro/classification/v1/          生成的 Go Protobuf
 
 cmd/candidate-orchestrator/               Candidate → Command
 cmd/classifier-worker/                    Command → Result
+cmd/async-classifier-worker/              有界并发 Command → Result（压测候选版本）
 cmd/classification-result-writer/         Result → PostgreSQL
 cmd/lightcurve-mock-server/               联调 LightCurve + Candidate mock
 cmd/science-classifier-web/               轻量科学推理入口
@@ -282,6 +283,23 @@ GitHub Actions 当前覆盖：
 - Git 工作区漂移检查。
 
 真实 Kafka、PostgreSQL、Triton 和联合服务器 E2E 不强塞入普通 CI，而使用显式服务器验收。
+
+手动触发 `.github/workflows/publish-go-images.yml` 会分别构建并发布：
+
+```text
+candidate-orchestrator
+classifier-worker
+async-classifier-worker（并发压测候选）
+classification-result-writer
+```
+
+镜像使用 Git commit SHA 作为 tag，并在 workflow summary 中记录 digest。并发候选镜像发布为：
+
+```text
+ghcr.io/zchen470/variable-star-async-classifier-worker:${GIT_SHA}
+```
+
+当前 K8s `classifier-worker` Deployment 仍固定到已验证的串行镜像 digest。发布并发候选镜像后，应先用 workflow 输出的真实 digest 做实验部署；完成压测和故障验收前，不把未知 digest 或可变 tag 写入生产 base manifest。
 
 ---
 
@@ -661,11 +679,19 @@ Result Writer 只重新检查 predicted class 与确定性 argmax 一致，不�
 
 ## Classification Worker
 
-生产入口：
+当前生产串行入口：
 
 ```text
 cmd/classifier-worker/
 ```
+
+并发压测候选入口：
+
+```text
+cmd/async-classifier-worker/
+```
+
+候选入口复用相同的业务 Handler、Retry、DLQ、LightCurve、PostgreSQL、Triton 和 Result publish 语义，只替换 Kafka record 的执行与提交编排。验证完成前两个入口并存；完成真实正确性、rebalance 和 `1/2/4/8/16` 吞吐测试后，再将并发 runner 合并回 `cmd/classifier-worker`，继续沿用原生产镜像名和 Deployment，避免长期维护两份 composition root。
 
 处理链：
 
@@ -687,6 +713,22 @@ Worker：
 - 不读取 latest；
 - 只有完整成功结果才发布 ClassificationResult；
 - Result 发布成功后才允许原 Command offset 被提交。
+
+并发候选版本额外保证：
+
+- `PollRecords(ctx, concurrency)` 形成有界批次；
+- 相同 Kafka key（`object_id`）按 poll 顺序串行，不同 key 并行；
+- record 可乱序完成，但每个 partition 只提交连续成功前缀；
+- completion tracker 按实际 fetched offset 顺序推进，不假设 offset 数字连续；
+- rebalance yield 取消整个批次，旧 session 结束后从 committed offset 恢复。
+
+并发度配置：
+
+```text
+CLASSIFIER_WORKER_CONCURRENCY=8
+```
+
+允许范围为 `1..64`，默认 `1`。完整实现说明、Mermaid 图、压测路线和面试问答见 [`docs/S10_classifier_worker_concurrency_design.md`](docs/S10_classifier_worker_concurrency_design.md)。
 
 Command 装饰链：
 
@@ -775,7 +817,7 @@ astro_classification_command_retry_age_seconds
 
 ## Rebalance Yield 与 Consumer Session Recovery
 
-`classifier-worker` 使用：
+串行 `classifier-worker` 使用：
 
 ```text
 DisableAutoCommit
@@ -817,6 +859,18 @@ Prometheus 指标：
 
 ```text
 astro_kafka_rebalance_callback_blocked_total
+```
+
+并发候选版本继续使用同一 generation/fresh-session 原则，但取消单位从单条 record 扩展为一个有界 poll batch：
+
+```text
+blocked rebalance
+→ cancel batch Context
+→ 等待所有 in-flight Handler 退出
+→ 整批不 commit
+→ AllowRebalance
+→ 关闭旧 consumer session
+→ fresh session 从 committed offset 恢复
 ```
 
 ---

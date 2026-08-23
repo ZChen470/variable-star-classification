@@ -6,10 +6,10 @@ import (
 )
 
 // RebalanceYield coordinates a franz-go blocked-rebalance signal with the
-// currently processed Kafka record.
+// currently processed Kafka record or bounded record batch.
 //
-// Request increments the rebalance generation and cancels the active record
-// context, if any. A record can compare the generation captured before poll
+// Request increments the rebalance generation and cancels the active processing
+// context, if any. A runner can compare the generation captured before poll
 // with the current generation to determine whether it must yield ownership.
 type RebalanceYield struct {
 	mu         sync.Mutex
@@ -50,7 +50,7 @@ func (yield *RebalanceYield) Request() {
 	}
 }
 
-// Bind derives a context for one in-flight Kafka record.
+// Bind derives a context for one in-flight Kafka record or bounded batch.
 //
 // baseline must be the generation captured before polling that record. If a
 // yield request arrived after baseline was captured, the returned context is
@@ -59,10 +59,10 @@ func (yield *RebalanceYield) Bind(
 	parent context.Context,
 	baseline uint64,
 ) (context.Context, func()) {
-	recordContext, cancel := context.WithCancel(parent)
+	processingContext, cancel := context.WithCancel(parent)
 
 	if yield == nil {
-		return recordContext, cancel
+		return processingContext, cancel
 	}
 
 	yield.mu.Lock()
@@ -82,7 +82,7 @@ func (yield *RebalanceYield) Bind(
 		cancel()
 	}
 
-	return recordContext, release
+	return processingContext, release
 }
 
 // RequestedSince reports whether a rebalance yield was requested after the

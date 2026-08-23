@@ -118,6 +118,12 @@ func (observer *classificationCommandObserverTestObserver) CommandStarted() {
 func (observer *classificationCommandObserverTestObserver) CommandFinished(time.Duration) {
 }
 
+func (observer *classificationCommandObserverTestObserver) StageFinished(
+	ClassificationCommandStage,
+	time.Duration,
+) {
+}
+
 type classificationCommandObserverTestHandler struct {
 	results []error
 	calls   int

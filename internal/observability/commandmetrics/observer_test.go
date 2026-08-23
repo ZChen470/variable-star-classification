@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ZChen470/variable-star-classification/internal/application"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
@@ -63,6 +64,44 @@ func TestNewRejectsInvalidArguments(t *testing.T) {
 	if _, err := newObserver(registry, nil); err == nil {
 		t.Fatal("newObserver(registry, nil) error = nil")
 	}
+}
+
+func TestObserverTracksConcurrentRetryingCommands(t *testing.T) {
+	registry := prometheus.NewRegistry()
+	now := time.Date(2026, 8, 13, 12, 0, 0, 0, time.UTC)
+	observer, err := newObserver(registry, func() time.Time { return now })
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	observer.RetryStarted()
+	observer.RetryStarted()
+	body := scrapeCommandMetrics(t, registry)
+	assertCommandMetricContains(t, body, "astro_classification_command_retrying 2")
+
+	observer.RetryFinished()
+	body = scrapeCommandMetrics(t, registry)
+	assertCommandMetricContains(t, body, "astro_classification_command_retrying 1")
+
+	observer.RetryFinished()
+	body = scrapeCommandMetrics(t, registry)
+	assertCommandMetricContains(t, body, "astro_classification_command_retrying 0")
+}
+
+func TestObserverExportsWorkerStageDuration(t *testing.T) {
+	registry := prometheus.NewRegistry()
+	observer, err := New(registry)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	observer.StageFinished(application.ClassificationCommandStageTriton, 25*time.Millisecond)
+	body := scrapeCommandMetrics(t, registry)
+	assertCommandMetricContains(
+		t,
+		body,
+		`astro_classification_command_stage_duration_seconds_count{stage="triton"} 1`,
+	)
 }
 
 func scrapeCommandMetrics(t *testing.T, registry *prometheus.Registry) string {

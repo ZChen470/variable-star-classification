@@ -39,4 +39,5 @@ data:
   TRITON_BASE_URL: "http://triton-gateway:8000"
   MODEL_BUNDLE_VERSION: "variable-classifier-2026-07-003"
   MODEL_BUNDLE_MANIFEST_PATH: "/config/model-bundle-manifest-v2.yaml"
+  CLASSIFIER_WORKER_CONCURRENCY: "8"
   MANAGEMENT_LISTEN_ADDR: "0.0.0.0:9091"

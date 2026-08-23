@@ -20,6 +20,8 @@ jobs:
             image: ghcr.io/zchen470/variable-star-candidate-orchestrator
           - target: classifier-worker
             image: ghcr.io/zchen470/variable-star-classifier-worker
+          - target: async-classifier-worker
+            image: ghcr.io/zchen470/variable-star-async-classifier-worker
           - target: classification-result-writer
             image: ghcr.io/zchen470/variable-star-classification-result-writer
 

@@ -137,9 +137,14 @@ func (handler *ClassificationWorkerHandler) Handle(
 		logger = slog.Default()
 	}
 
+	stageStarted := time.Now()
 	command, err := DecodeClassificationCommandMessage(
 		handler.commandTopic,
 		message,
+	)
+	handler.observer.StageFinished(
+		ClassificationCommandStageDecode,
+		time.Since(stageStarted),
 	)
 	if err != nil {
 		return WrapClassificationWorkerError(
@@ -165,6 +170,7 @@ func (handler *ClassificationWorkerHandler) Handle(
 		"kafka_offset", message.Offset,
 	)
 
+	stageStarted = time.Now()
 	prepared, err := handler.inputPrepare.Prepare(
 		ctx,
 		ClassificationInputPreparationRequest{
@@ -174,6 +180,10 @@ func (handler *ClassificationWorkerHandler) Handle(
 			ModelBundleVersion:         command.ModelBundleVersion,
 		},
 	)
+	handler.observer.StageFinished(
+		ClassificationCommandStagePrepareInput,
+		time.Since(stageStarted),
+	)
 	if err != nil {
 		return WrapClassificationWorkerError(
 			ClassificationWorkerOperationPrepareInput,
@@ -181,11 +191,16 @@ func (handler *ClassificationWorkerHandler) Handle(
 		)
 	}
 
+	stageStarted = time.Now()
 	servingBundle, err :=
 		handler.servingBundleResolver.ResolveServingBundle(
 			ctx,
 			command.ModelBundleVersion,
 		)
+	handler.observer.StageFinished(
+		ClassificationCommandStageResolveBundle,
+		time.Since(stageStarted),
+	)
 	if err != nil {
 		return WrapClassificationWorkerError(
 			ClassificationWorkerOperationResolveBundle,
@@ -198,9 +213,14 @@ func (handler *ClassificationWorkerHandler) Handle(
 		string(command.JobID),
 	)
 
+	stageStarted = time.Now()
 	output, err := handler.classifier.Classify(
 		classificationContext,
 		prepared.Input,
+	)
+	handler.observer.StageFinished(
+		ClassificationCommandStageTriton,
+		time.Since(stageStarted),
 	)
 	if err != nil {
 		return WrapClassificationWorkerError(
@@ -217,6 +237,7 @@ func (handler *ClassificationWorkerHandler) Handle(
 		)
 	}
 
+	stageStarted = time.Now()
 	run, err := BuildClassificationRun(
 		ClassificationRunBuildRequest{
 			JobID:             command.JobID,
@@ -228,6 +249,10 @@ func (handler *ClassificationWorkerHandler) Handle(
 			CompletedAt:       handler.now(),
 		},
 	)
+	handler.observer.StageFinished(
+		ClassificationCommandStageBuildRun,
+		time.Since(stageStarted),
+	)
 	if err != nil {
 		return WrapClassificationWorkerError(
 			ClassificationWorkerOperationBuildRun,
@@ -235,11 +260,16 @@ func (handler *ClassificationWorkerHandler) Handle(
 		)
 	}
 
+	stageStarted = time.Now()
 	resultMessage, err := BuildClassificationResultMessage(
 		handler.resultTopic,
 		run,
 		command.TraceContext,
 		message.Headers,
+	)
+	handler.observer.StageFinished(
+		ClassificationCommandStageBuildResult,
+		time.Since(stageStarted),
 	)
 	if err != nil {
 		return WrapClassificationWorkerError(
@@ -248,10 +278,16 @@ func (handler *ClassificationWorkerHandler) Handle(
 		)
 	}
 
-	if err = handler.publisher.Publish(
+	stageStarted = time.Now()
+	err = handler.publisher.Publish(
 		ctx,
 		resultMessage,
-	); err != nil {
+	)
+	handler.observer.StageFinished(
+		ClassificationCommandStagePublishResult,
+		time.Since(stageStarted),
+	)
+	if err != nil {
 		return WrapClassificationWorkerError(
 			ClassificationWorkerOperationPublishResult,
 			err,
