@@ -44,6 +44,14 @@ CurrentClassification
 LightCurve Mock HTTP 联合链路：VERIFIED_SERVER
 Kafka + LightCurve + Triton + PostgreSQL 联合 E2E：VERIFIED_SERVER
 
+Async Classifier Worker 有界并发实现：VERIFIED_CI
+Async Worker 两 Pod 首轮阶梯压测：SERVER_BENCHMARKED
+  concurrency=1,  offered=53/s,  processed≈46/s
+  concurrency=2,  offered=67/s,  processed≈67/s
+  concurrency=4,  offered=100/s, processed≈100/s
+  concurrency=8,  offered=150/s, processed≈150/s
+  concurrency=16, offered=200/s, processed≈165/s
+
 33 events/s production peak：PASS / SERVER_VERIFIED
 53 events/s short-duration safety headroom：PASS / SERVER_VERIFIED
 67 events/s upper boundary：
@@ -156,6 +164,8 @@ Security：
 
 Load：
   17 / 33 / 53 / 67 events/s 服务器负载证据
+  Async Worker 两 Pod concurrency 1 / 2 / 4 / 8 / 16 阶梯压测
+  已验证 concurrency=8 在当前测试分布下跟上 150 events/s
 ```
 
 当前不包含：
@@ -299,7 +309,13 @@ classification-result-writer
 ghcr.io/zchen470/variable-star-async-classifier-worker:${GIT_SHA}
 ```
 
-当前 K8s `classifier-worker` Deployment 仍固定到已验证的串行镜像 digest。发布并发候选镜像后，应先用 workflow 输出的真实 digest 做实验部署；完成压测和故障验收前，不把未知 digest 或可变 tag 写入生产 base manifest。
+当前已完成服务器实验部署的并发候选镜像为：
+
+```text
+ghcr.io/zchen470/variable-star-async-classifier-worker@sha256:23cf0ed4ed7653a26660d2f7ebdbd227f4a5b53820ff81476e27a73f52e86d3b
+```
+
+服务器已使用该不可变 digest 完成两个 Worker Pod、`concurrency=1/2/4/8/16` 的第一轮阶梯压测。仓库 K8s production base 仍固定到已验证的串行镜像 digest；在同负载对照、故障验收和长时间 soak 完成前，不把候选镜像直接替换为 production base。
 
 ---
 
@@ -685,13 +701,13 @@ Result Writer 只重新检查 predicted class 与确定性 argmax 一致，不�
 cmd/classifier-worker/
 ```
 
-并发压测候选入口：
+并发候选入口：
 
 ```text
 cmd/async-classifier-worker/
 ```
 
-候选入口复用相同的业务 Handler、Retry、DLQ、LightCurve、PostgreSQL、Triton 和 Result publish 语义，只替换 Kafka record 的执行与提交编排。验证完成前两个入口并存；完成真实正确性、rebalance 和 `1/2/4/8/16` 吞吐测试后，再将并发 runner 合并回 `cmd/classifier-worker`，继续沿用原生产镜像名和 Deployment，避免长期维护两份 composition root。
+候选入口复用相同的业务 Handler、Retry、DLQ、LightCurve、PostgreSQL、Triton 和 Result publish 语义，只替换 Kafka record 的执行与提交编排。代码级并发/offset 测试和第一轮真实 `1/2/4/8/16` 阶梯压测已经完成；同负载对照、并发故障验收和长时间 soak 完成前，两个入口继续并存。候选版本最终通过验收后，再将并发 runner 合并回 `cmd/classifier-worker`，继续沿用生产镜像名和 Deployment，避免长期维护两份 composition root。
 
 处理链：
 
@@ -728,7 +744,23 @@ Worker：
 CLASSIFIER_WORKER_CONCURRENCY=8
 ```
 
-允许范围为 `1..64`，默认 `1`。完整实现说明、Mermaid 图、压测路线和面试问答见 [`docs/S10_classifier_worker_concurrency_design.md`](docs/S10_classifier_worker_concurrency_design.md)。
+允许范围为 `1..64`，默认 `1`。
+
+两 Pod 第一轮服务器阶梯压测结果：
+
+| 每 Pod concurrency | Mock offered rate | Command processing rate | Triton request | Triton queue | Triton pending | GPU utilization | 当前判断 |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |
+| 1 | 53/s | 46/s | 24 ms | 0.4 ms | 1 | 2% | 输入高于处理，存在积压趋势 |
+| 2 | 67/s | 67/s | 25 ms | 0.8 ms | 1 | 4% | 当前负载下能跟上 |
+| 4 | 100/s | 100/s | 30 ms | 1.8 ms | 2 | 5% | 当前负载下能跟上 |
+| 8 | 150/s | 150/s | 40 ms | 11.3 ms | 4 | 7% | 当前负载下能跟上，排队开始增加 |
+| 16 | 200/s | 165/s | 80 ms | 40 ms | 13 | 9% | 吞吐增幅趋缓，Triton 排队明显 |
+
+这是一组 offered rate 随 concurrency 一起提高的容量阶梯测试，因此只能确认 `concurrency=2/4/8` 的容量下限，不能把 `67/100/150` 直接当作对应配置的最大吞吐。当前需要补充 `concurrency=8、rate=200/s`，与 `concurrency=16、rate=200/s` 做同负载对照。
+
+与原串行 Worker 在约 `57/s` 输入下出现 ClassificationCommand 积压相比，并发版本已经在当前测试数据分布下验证两个 Pod、`concurrency=8` 能跟上 `150/s`。继续提高到 `concurrency=16、rate=200/s` 时只能处理约 `165/s`，同时 Triton queue latency 和 pending request 明显上升，说明瓶颈开始从 Worker 调度侧迁移到 Triton serving path。由于 GPU utilization 仍较低，当前证据不能直接证明 GPU compute 饱和，还需要继续区分 Triton 模型实例、Python Backend、preprocessing、BLS/调度和内存复制等限制。
+
+完整实现说明、Mermaid 图、压测路线和面试问答见 [`docs/S10_classifier_worker_concurrency_design.md`](docs/S10_classifier_worker_concurrency_design.md)。阶段工作、服务器证据、Triton 诊断和后续方法论见 [`docs/阶段S10工作总结.md`](docs/阶段S10工作总结.md)。
 
 Command 装饰链：
 
@@ -1853,6 +1885,11 @@ Transactional Outbox：DEFERRED
 | VariableStarClassifier Adapter | `VERIFIED_CI` |
 | 真实 Triton | `VERIFIED_SERVER` |
 | Classification Worker | `VERIFIED_CI / VERIFIED_SERVER` |
+| Async Classification Worker 有界并发与连续 offset 提交 | `VERIFIED_CI` |
+| Async Worker 两 Pod concurrency 1/2/4/8/16 阶梯压测 | `SERVER_BENCHMARKED` |
+| Async Worker concurrency=8、150 events/s | `CAPACITY_FLOOR_VERIFIED_SERVER` |
+| Async Worker concurrency=8 vs 16 同负载对照 | `PENDING_SERVER_BENCHMARK` |
+| Triton serving path / Python Backend 瓶颈隔离 | `IN_PROGRESS` |
 | 长期 RETRYABLE | `VERIFIED_CI / VERIFIED_SERVER` |
 | Rebalance Yield / Fresh Consumer Session | `VERIFIED_CI / VERIFIED_SERVER` |
 | Command DLQ / Offset | `VERIFIED_CI / VERIFIED_SERVER` |
@@ -1891,6 +1928,18 @@ PASS / SERVER_VERIFIED
 
 RECOVERABLE_OVERLOAD
 正确性和恢复通过，但该负载不能持续零积压运行
+
+SERVER_BENCHMARKED
+已经完成指定服务器压测，但结果仍受 offered rate、数据分布和测试时长边界约束
+
+CAPACITY_FLOOR_VERIFIED_SERVER
+当前配置在指定服务器和数据分布下已经跟上该输入速率，但不代表最大吞吐
+
+PENDING_SERVER_BENCHMARK
+实现或实验设计已完成，仍需服务器对照数据才能关闭
+
+IN_PROGRESS
+已经获得初步证据并进入下一轮隔离定位，尚未形成最终结论
 
 DEFERRED
 明确延后，不应描述为已验证
