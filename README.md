@@ -1,8 +1,47 @@
-# Variable Star Classification
-
-变源候选体实时分类系统的 Go 工程仓库。
+# 变源候选体实光变曲线时分类系统
 
 系统面向地基光学望远镜产生的变源候选体，通过固定光变曲线 revision、版本化模型契约、确定性任务身份、Kafka 异步消息、Triton 推理和 PostgreSQL 幂等持久化，形成可追溯、可重放、可恢复、可观测的实时分类基础。
+
+<p align="center">
+  <img src="docs/assets/variable-star-classification-hero-v2.png" alt="巡天望远镜将光变曲线送入 Kafka 和并发 Command Worker，再由 XGBoost 与 Transformer 完成分类并可靠持久化" width="100%" />
+</p>
+
+<p align="center">
+  <strong>从巡天观测到实时分类</strong> · Kafka · Concurrent Command Worker · XGBoost + Transformer · PostgreSQL 幂等落库
+</p>
+
+## 核心链路
+
+```mermaid
+flowchart LR
+    SKY["🔭 望远镜候选体"]
+    EVENTS["📨 Kafka 事件流<br/>Candidate → Command"]
+    WORKER["⚡ 并发分类 Worker<br/>同对象保序 · 跨对象并行"]
+    TRITON["🧠 Triton GPU<br/>XGBoost + Transformer"]
+    RESULT["✅ Kafka Result<br/>→ Result Writer"]
+    DB[("🗄️ PostgreSQL<br/>幂等持久化")]
+
+    SKY --> EVENTS --> WORKER
+    WORKER <-->|"V2 inference"| TRITON
+    WORKER --> RESULT --> DB
+
+    LIGHTCURVE["📈 固定 LightCurve Revision"] -.-> WORKER
+    SAFE["连续 Offset 提交<br/>Retry · DLQ · Rebalance 安全"] -.-> WORKER
+    OBS["📊 Prometheus + Grafana"] -.-> WORKER
+    OBS -.-> TRITON
+
+    classDef source fill:#e0f2fe,stroke:#0284c7,color:#0c4a6e,stroke-width:2px;
+    classDef stream fill:#fef3c7,stroke:#d97706,color:#78350f,stroke-width:2px;
+    classDef compute fill:#ede9fe,stroke:#7c3aed,color:#3b0764,stroke-width:2px;
+    classDef result fill:#dcfce7,stroke:#16a34a,color:#14532d,stroke-width:2px;
+    classDef support fill:#f8fafc,stroke:#64748b,color:#0f172a,stroke-width:1px,stroke-dasharray:4 3;
+
+    class SKY source;
+    class EVENTS stream;
+    class WORKER,TRITON compute;
+    class RESULT,DB result;
+    class LIGHTCURVE,SAFE,OBS support;
+```
 
 ## 当前状态
 
