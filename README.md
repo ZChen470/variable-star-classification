@@ -70,6 +70,79 @@ Model Artifact Recovery：DEFERRED / DOCUMENTED RISK
 
 ---
 
+## 系统架构
+
+```mermaid
+flowchart LR
+    subgraph SOURCES["数据源"]
+        TEL["真实望远镜 / 上游 Candidate"]
+        MOCK["LightCurve Mock<br/>+ Candidate Publisher"]
+    end
+
+    subgraph KAFKA["Kafka 事件主干（3 Brokers）"]
+        CANDIDATE[["variable-star-candidate"]]
+        COMMAND[["light-curve-classification-command"]]
+        RESULT[["light-curve-classification-result"]]
+        DLQ[["Candidate / Command / Result DLQ"]]
+    end
+
+    subgraph APPS["Kubernetes · variable-star"]
+        ORCHESTRATOR["candidate-orchestrator"]
+        WORKER["classifier-worker<br/>串行生产入口 / Async 并发候选"]
+        GATEWAY["Triton Gateway<br/>Traefik"]
+        WRITER["classification-result-writer"]
+    end
+
+    subgraph DEPS["模型与数据依赖"]
+        LIGHTCURVE["LightCurve HTTP<br/>固定 revision"]
+        MANIFEST["Serving Bundle Manifest<br/>版本与契约门禁"]
+        TRITON["Triton Inference Server<br/>variable_star_classifier"]
+        POSTGRES[("PostgreSQL<br/>ClassificationRun<br/>CurrentClassification")]
+    end
+
+    subgraph OBS["可观测性"]
+        PROMETHEUS["Prometheus"]
+        GRAFANA["Grafana"]
+    end
+
+    TEL --> CANDIDATE
+    MOCK --> CANDIDATE
+    CANDIDATE --> ORCHESTRATOR
+    ORCHESTRATOR --> COMMAND
+    COMMAND --> WORKER
+
+    WORKER -->|"读取固定光变曲线"| LIGHTCURVE
+    WORKER -->|"查询兼容历史粗概率"| POSTGRES
+    MANIFEST -.->|"冻结模型版本与 I/O 契约"| WORKER
+    WORKER -->|"Triton V2 HTTP"| GATEWAY
+    GATEWAY --> TRITON
+
+    WORKER -->|"Result publish 成功后才完成 Command"| RESULT
+    RESULT --> WRITER
+    WRITER -->|"幂等保存并条件推进 Current"| POSTGRES
+
+    ORCHESTRATOR -. "Permanent failure" .-> DLQ
+    WORKER -. "Permanent failure" .-> DLQ
+    WRITER -. "Permanent failure" .-> DLQ
+
+    ORCHESTRATOR -. "/metrics" .-> PROMETHEUS
+    WORKER -. "/metrics" .-> PROMETHEUS
+    WRITER -. "/metrics" .-> PROMETHEUS
+    GATEWAY -. "Gateway metrics" .-> PROMETHEUS
+    TRITON -. "Inference / GPU metrics" .-> PROMETHEUS
+    PROMETHEUS --> GRAFANA
+```
+
+读图要点：
+
+- Kafka 将 Candidate 编排、分类推理和结果持久化拆成三个可独立恢复、独立扩容的阶段；
+- `classifier-worker` 只查询 LightCurve 和兼容历史粗概率，不直接写 `ClassificationRun`；
+- Result 被 Kafka 确认后，原 Command offset 才允许推进；`classification-result-writer` 负责最终幂等持久化；
+- Triton Gateway 对后端实例做健康检查和负载分发，Worker 不直接绑定某个 GPU 实例；
+- 应用、Gateway、Triton 和 GPU 指标统一进入 Prometheus，并由 Grafana 展示端到端速率、延迟、排队和资源利用率。
+
+---
+
 ## 当前范围
 
 当前仓库包含：
