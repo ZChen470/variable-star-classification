@@ -22,8 +22,15 @@ spec:
       terminationGracePeriodSeconds: 60
       containers:
         - name: classifier-worker
-          image: ghcr.io/zchen470/variable-star-classifier-worker@sha256:bf5c388d56f3bc916d96f0403087a86b8935982a82baedc971d1e1c7cf146a22
+          image: ghcr.io/zchen470/variable-star-async-classifier-worker@sha256:23cf0ed4ed7653a26660d2f7ebdbd227f4a5b53820ff81476e27a73f52e86d3b
           imagePullPolicy: IfNotPresent
+          resources:
+            requests:
+              cpu: "1"
+              memory: "64Mi"
+            limits:
+              cpu: "2"
+              memory: "256Mi"
           envFrom:
             - configMapRef:
                 name: classifier-worker-config

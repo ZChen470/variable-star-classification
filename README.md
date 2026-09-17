@@ -421,13 +421,13 @@ classification-result-writer
 ghcr.io/zchen470/variable-star-async-classifier-worker:${GIT_SHA}
 ```
 
-当前已完成服务器实验部署的并发候选镜像为：
+当前 Kubernetes production base 使用的 async Worker 不可变镜像为：
 
 ```text
 ghcr.io/zchen470/variable-star-async-classifier-worker@sha256:23cf0ed4ed7653a26660d2f7ebdbd227f4a5b53820ff81476e27a73f52e86d3b
 ```
 
-服务器已使用该不可变 digest 完成两个 Worker Pod、`concurrency=1/2/4/8/16` 的第一轮阶梯压测。仓库 K8s production base 仍固定到已验证的串行镜像 digest；在同负载对照、故障验收和长时间 soak 完成前，不把候选镜像直接替换为 production base。
+服务器已使用该不可变 digest 完成两个 Worker Pod、`concurrency=1/2/4/8/16` 的第一轮阶梯压测。S11-02 已将 Kubernetes production base 收敛到该 async immutable digest，并冻结 `CLASSIFIER_WORKER_CONCURRENCY=16` 与 Resource Contract v1：request `1 CPU / 64Mi`，limit `2 CPU / 256Mi`。该资源契约已完成 `150 events/s × 150s` 的同负载服务器验证（实际窗口 157s），测试期间两个 Worker 的 CFS throttled periods 均为 0，吞吐维持约 149.5 events/s，测试结束后三个 Kafka consumer group 均 drain 到 0。该结论只证明当前资源契约未造成吞吐退化，不替代 S10 中 `concurrency=8 vs 16 @ 200/s`、并发故障验收和长期 soak 等待补证据。
 
 ---
 
@@ -853,7 +853,7 @@ Worker：
 并发度配置：
 
 ```text
-CLASSIFIER_WORKER_CONCURRENCY=8
+CLASSIFIER_WORKER_CONCURRENCY=16
 ```
 
 允许范围为 `1..64`，默认 `1`。
@@ -2000,6 +2000,7 @@ Transactional Outbox：DEFERRED
 | Async Classification Worker 有界并发与连续 offset 提交 | `VERIFIED_CI` |
 | Async Worker 两 Pod concurrency 1/2/4/8/16 阶梯压测 | `SERVER_BENCHMARKED` |
 | Async Worker concurrency=8、150 events/s | `CAPACITY_FLOOR_VERIFIED_SERVER` |
+| S11-02 Worker Resource Contract v1（concurrency=16，request 1 CPU / 64Mi，limit 2 CPU / 256Mi） | `VERIFIED_SERVER` |
 | Async Worker concurrency=8 vs 16 同负载对照 | `PENDING_SERVER_BENCHMARK` |
 | Triton serving path / Python Backend 瓶颈隔离 | `IN_PROGRESS` |
 | 长期 RETRYABLE | `VERIFIED_CI / VERIFIED_SERVER` |
