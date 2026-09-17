@@ -22,7 +22,7 @@ spec:
       terminationGracePeriodSeconds: 60
       containers:
         - name: classifier-worker
-          image: ghcr.io/zchen470/variable-star-async-classifier-worker@sha256:23cf0ed4ed7653a26660d2f7ebdbd227f4a5b53820ff81476e27a73f52e86d3b
+          image: ghcr.io/zchen470/variable-star-async-classifier-worker@sha256:c1c381d494c7bc50fa1915a21b684e4856cfb3b2612eca4b25147e77020daa02
           imagePullPolicy: IfNotPresent
           resources:
             requests:
