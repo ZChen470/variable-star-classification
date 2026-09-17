@@ -41,3 +41,17 @@ data:
   MODEL_BUNDLE_MANIFEST_PATH: "/config/model-bundle-manifest-v2.yaml"
   CLASSIFIER_WORKER_CONCURRENCY: "16"
   MANAGEMENT_LISTEN_ADDR: "0.0.0.0:9091"
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: kafka-backlog-exporter-config
+  namespace: variable-star
+data:
+  KAFKA_BROKERS: "10.3.10.166:9092,10.3.10.166:9093,10.3.10.166:9094"
+  KAFKA_CONSUMER_GROUP: "light-curve-classification-command-group"
+  KAFKA_TOPIC: "light-curve-classification-command"
+  KAFKA_CLIENT_ID: "kafka-backlog-exporter"
+  BACKLOG_REFRESH_INTERVAL: "15s"
+  BACKLOG_REFRESH_TIMEOUT: "10s"
+  MANAGEMENT_LISTEN_ADDR: "0.0.0.0:9091"

@@ -1,0 +1,64 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kafka-backlog-exporter
+  namespace: variable-star
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: kafka-backlog-exporter
+  template:
+    metadata:
+      labels:
+        app: kafka-backlog-exporter
+    spec:
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 30
+      containers:
+        - name: kafka-backlog-exporter
+          image: ghcr.io/zchen470/variable-star-kafka-backlog-exporter@sha256:a6a17b645c954b381b589218af6e0bf058a5783b2b0af6bc3c790e538e040994
+          imagePullPolicy: IfNotPresent
+          resources:
+            requests:
+              cpu: "50m"
+              memory: "64Mi"
+            limits:
+              cpu: "250m"
+              memory: "256Mi"
+          envFrom:
+            - configMapRef:
+                name: kafka-backlog-exporter-config
+            - secretRef:
+                name: kafka-backlog-exporter-secret
+          ports:
+            - name: management
+              containerPort: 9091
+          startupProbe:
+            httpGet:
+              path: /live
+              port: management
+            periodSeconds: 2
+            failureThreshold: 30
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: management
+            periodSeconds: 5
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /live
+              port: management
+            periodSeconds: 10
+            failureThreshold: 3
+          securityContext:
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            seccompProfile:
+              type: RuntimeDefault

@@ -13,6 +13,7 @@ spec:
         values:
           - candidate-orchestrator
           - classifier-worker
+          - kafka-backlog-exporter
           - classification-result-writer
   podMetricsEndpoints:
     - port: management

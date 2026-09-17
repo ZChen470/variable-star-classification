@@ -6,5 +6,6 @@ resources:
   - serving-manifest-configmap.yaml
   - candidate-orchestrator.yaml
   - classifier-worker.yaml
+  - kafka-backlog-exporter.yaml
   - classification-result-writer.yaml
   - variable-star-triton.yaml
