@@ -9,6 +9,7 @@ require (
 	github.com/jackc/pgx/v5 v5.9.2
 	github.com/prometheus/client_golang v1.24.1
 	github.com/twmb/franz-go v1.21.5
+	github.com/twmb/franz-go/pkg/kadm v1.18.0
 	gopkg.in/yaml.v3 v3.0.1
 )
 
