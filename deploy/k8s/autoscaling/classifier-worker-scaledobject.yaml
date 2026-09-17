@@ -37,13 +37,41 @@ spec:
       metricType: AverageValue
       metadata:
         serverAddress: http://monitoring-kube-prometheus-prometheus.monitoring.svc.cluster.local:9090
+
+        # The exporter refreshes every 15 seconds. A snapshot older than
+        # 45 seconds, a failed refresh, or missing health metadata is
+        # treated as unhealthy. In that case fail open to capacity:
+        # 15 / AverageValue(5) = 3 replicas, which is maxReplicaCount.
         query: >-
-          sum(
-            astro_kafka_consumer_group_lag{
-              group="light-curve-classification-command-group",
-              topic="light-curve-classification-command"
-            }
+          (
+            (
+              sum(
+                astro_kafka_consumer_group_lag{
+                  group="light-curve-classification-command-group",
+                  topic="light-curve-classification-command"
+                }
+              )
+            )
+            and on()
+            (
+              astro_kafka_consumer_group_snapshot_success{
+                group="light-curve-classification-command-group",
+                topic="light-curve-classification-command"
+              } == 1
+            )
+            and on()
+            (
+              (
+                time()
+                -
+                astro_kafka_consumer_group_snapshot_timestamp_seconds{
+                  group="light-curve-classification-command-group",
+                  topic="light-curve-classification-command"
+                }
+              ) < 45
+            )
           )
+          or vector(15)
         threshold: "5"
         ignoreNullValues: "false"
         timeout: "3s"
@@ -52,13 +80,40 @@ spec:
       metricType: Value
       metadata:
         serverAddress: http://monitoring-kube-prometheus-prometheus.monitoring.svc.cluster.local:9090
+
+        # Healthy snapshots preserve the age>30s insurance trigger.
+        # An unhealthy or stale snapshot returns 1 instead of stale/zero
+        # data, keeping the autoscaler biased toward available capacity.
         query: >-
-          max(
-            astro_kafka_consumer_group_oldest_uncommitted_age_seconds{
-              group="light-curve-classification-command-group",
-              topic="light-curve-classification-command"
-            }
-          ) > bool 30
+          (
+            (
+              max(
+                astro_kafka_consumer_group_oldest_uncommitted_age_seconds{
+                  group="light-curve-classification-command-group",
+                  topic="light-curve-classification-command"
+                }
+              ) > bool 30
+            )
+            and on()
+            (
+              astro_kafka_consumer_group_snapshot_success{
+                group="light-curve-classification-command-group",
+                topic="light-curve-classification-command"
+              } == 1
+            )
+            and on()
+            (
+              (
+                time()
+                -
+                astro_kafka_consumer_group_snapshot_timestamp_seconds{
+                  group="light-curve-classification-command-group",
+                  topic="light-curve-classification-command"
+                }
+              ) < 45
+            )
+          )
+          or vector(1)
         threshold: "0.5"
         ignoreNullValues: "false"
         timeout: "3s"
