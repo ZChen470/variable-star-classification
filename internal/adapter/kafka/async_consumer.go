@@ -17,6 +17,10 @@ type asyncConsumerClient interface {
 	AllowRebalance()
 }
 
+type CommitProgressObserver interface {
+	ObserveCommittedRecords(count int)
+}
+
 // AsyncConsumerRunner polls a bounded batch, processes different Kafka keys in
 // parallel, and commits only the continuously completed prefix of each
 // partition. Records with the same non-empty key are processed in poll order.
@@ -25,10 +29,11 @@ type asyncConsumerClient interface {
 // reports a blocked rebalance, RebalanceYield cancels the whole batch and the
 // caller must create a fresh consumer session from committed offsets.
 type AsyncConsumerRunner struct {
-	consumer    asyncConsumerClient
-	handler     application.MessageHandler
-	yield       *RebalanceYield
-	concurrency int
+	consumer               asyncConsumerClient
+	handler                application.MessageHandler
+	yield                  *RebalanceYield
+	concurrency            int
+	commitProgressObserver CommitProgressObserver
 }
 
 func NewAsyncConsumerRunner(
@@ -56,6 +61,33 @@ func NewAsyncConsumerRunner(
 	}
 
 	return newAsyncConsumerRunner(client, handler, yield, concurrency)
+}
+
+func NewAsyncConsumerRunnerWithCommitProgressObserver(
+	client *kgo.Client,
+	handler application.MessageHandler,
+	yield *RebalanceYield,
+	concurrency int,
+	observer CommitProgressObserver,
+) (*AsyncConsumerRunner, error) {
+	if observer == nil {
+		return nil, errors.New(
+			"create async Kafka consumer runner: nil commit progress observer",
+		)
+	}
+
+	runner, err := NewAsyncConsumerRunner(
+		client,
+		handler,
+		yield,
+		concurrency,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	runner.commitProgressObserver = observer
+	return runner, nil
 }
 
 func newAsyncConsumerRunner(
@@ -131,7 +163,8 @@ func (runner *AsyncConsumerRunner) Run(ctx context.Context) error {
 		}
 
 		batchContext, release := runner.yield.Bind(ctx, generation)
-		commitRecords, processErr := runner.processBatch(batchContext, records)
+		commitRecords, committedRecordCount, processErr :=
+			runner.processBatch(batchContext, records)
 		yielded := runner.yield.RequestedSince(generation)
 
 		if yielded {
@@ -151,6 +184,12 @@ func (runner *AsyncConsumerRunner) Run(ctx context.Context) error {
 				release()
 				runner.consumer.AllowRebalance()
 				return fmt.Errorf("commit async Kafka record batch: %w", err)
+			}
+
+			if runner.commitProgressObserver != nil {
+				runner.commitProgressObserver.ObserveCommittedRecords(
+					committedRecordCount,
+				)
 			}
 		}
 
@@ -176,16 +215,16 @@ type batchFailure struct {
 func (runner *AsyncConsumerRunner) processBatch(
 	ctx context.Context,
 	records []*kgo.Record,
-) ([]*kgo.Record, error) {
+) ([]*kgo.Record, int, error) {
 	tracker := newPartitionCompletionTracker()
 	recordsByPartitionOffset := make(map[partitionKey]map[int64]*kgo.Record)
 
 	for _, record := range records {
 		if record == nil {
-			return nil, errors.New("process async Kafka batch: nil record")
+			return nil, 0, errors.New("process async Kafka batch: nil record")
 		}
 		if err := tracker.Track(record.Topic, record.Partition, record.Offset); err != nil {
-			return nil, err
+			return nil, 0, err
 		}
 
 		key := partitionKey{topic: record.Topic, partition: record.Partition}
@@ -242,12 +281,13 @@ func (runner *AsyncConsumerRunner) processBatch(
 	}()
 
 	committable := make(map[partitionKey]*kgo.Record)
+	committableRecordCount := 0
 	for completion := range completions {
 		if completion.err != nil {
 			continue
 		}
 
-		completedOffset, advanced, err := tracker.MarkCompleted(
+		completedOffset, advancedCount, err := tracker.MarkCompleted(
 			completion.record.Topic,
 			completion.record.Partition,
 			completion.record.Offset,
@@ -259,9 +299,11 @@ func (runner *AsyncConsumerRunner) processBatch(
 			})
 			continue
 		}
-		if !advanced {
+		if advancedCount == 0 {
 			continue
 		}
+
+		committableRecordCount += advancedCount
 
 		key := partitionKey{
 			topic:     completion.record.Topic,
@@ -282,7 +324,7 @@ func (runner *AsyncConsumerRunner) processBatch(
 	})
 
 	if firstFailure.err != nil {
-		return commitRecords, fmt.Errorf(
+		return commitRecords, committableRecordCount, fmt.Errorf(
 			"handle Kafka record topic %q partition %d offset %d: %w",
 			firstFailure.record.Topic,
 			firstFailure.record.Partition,
@@ -291,7 +333,7 @@ func (runner *AsyncConsumerRunner) processBatch(
 		)
 	}
 
-	return commitRecords, nil
+	return commitRecords, committableRecordCount, nil
 }
 
 func recordsFromFetches(fetches kgo.Fetches) ([]*kgo.Record, error) {

@@ -346,7 +346,7 @@ func run(logger *slog.Logger) error {
 		)
 	}
 
-	_, err =
+	workerMetrics, err :=
 		workermetrics.NewObserver(
 			registry,
 			config.classifierWorkerConcurrency,
@@ -411,11 +411,12 @@ func run(logger *slog.Logger) error {
 		}
 
 		runner, err :=
-			kafkaadapter.NewAsyncConsumerRunner(
+			kafkaadapter.NewAsyncConsumerRunnerWithCommitProgressObserver(
 				consumerClient,
 				handler,
 				rebalanceYield,
 				config.classifierWorkerConcurrency,
+				workerMetrics,
 			)
 		if err != nil {
 			consumerClient.CloseAllowingRebalance()

@@ -89,20 +89,21 @@ func (tracker *partitionCompletionTracker) Track(
 
 // MarkCompleted marks one tracked record complete. If this closes the gap at
 // the front of the partition queue, completedOffset is the highest actual
-// record offset in the newly committable prefix and advanced is true.
+// record offset in the newly committable prefix and advancedCount is the
+// number of actual tracked records newly included in that prefix.
 func (tracker *partitionCompletionTracker) MarkCompleted(
 	topic string,
 	partition int32,
 	offset int64,
-) (completedOffset int64, advanced bool, err error) {
+) (completedOffset int64, advancedCount int, err error) {
 	if tracker == nil {
-		return 0, false, errors.New("partition completion tracker is nil")
+		return 0, 0, errors.New("partition completion tracker is nil")
 	}
 
 	key := partitionKey{topic: topic, partition: partition}
 	state, ok := tracker.partitions[key]
 	if !ok {
-		return 0, false, fmt.Errorf(
+		return 0, 0, fmt.Errorf(
 			"%w: topic %q partition %d offset %d",
 			ErrOffsetNotTracked,
 			topic,
@@ -112,7 +113,7 @@ func (tracker *partitionCompletionTracker) MarkCompleted(
 	}
 
 	if _, ok := state.index[offset]; !ok {
-		return 0, false, fmt.Errorf(
+		return 0, 0, fmt.Errorf(
 			"%w: topic %q partition %d offset %d",
 			ErrOffsetNotTracked,
 			topic,
@@ -135,5 +136,5 @@ func (tracker *partitionCompletionTracker) MarkCompleted(
 		completedOffset = candidate
 	}
 
-	return completedOffset, state.next > start, nil
+	return completedOffset, state.next - start, nil
 }

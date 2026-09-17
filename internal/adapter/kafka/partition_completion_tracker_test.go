@@ -15,22 +15,34 @@ func TestPartitionCompletionTrackerWaitsForGap(t *testing.T) {
 		}
 	}
 
-	if offset, advanced, err := tracker.MarkCompleted("topic", 0, 102); err != nil {
+	if offset, advancedCount, err := tracker.MarkCompleted("topic", 0, 102); err != nil {
 		t.Fatal(err)
-	} else if advanced || offset != 0 {
-		t.Fatalf("completion advanced to %d, want no advance", offset)
+	} else if advancedCount != 0 || offset != 0 {
+		t.Fatalf(
+			"completion advancedCount=%d offset=%d, want 0/0",
+			advancedCount,
+			offset,
+		)
 	}
 
-	if offset, advanced, err := tracker.MarkCompleted("topic", 0, 100); err != nil {
+	if offset, advancedCount, err := tracker.MarkCompleted("topic", 0, 100); err != nil {
 		t.Fatal(err)
-	} else if !advanced || offset != 100 {
-		t.Fatalf("completion advanced=%v offset=%d, want true/100", advanced, offset)
+	} else if advancedCount != 1 || offset != 100 {
+		t.Fatalf(
+			"completion advancedCount=%d offset=%d, want 1/100",
+			advancedCount,
+			offset,
+		)
 	}
 
-	if offset, advanced, err := tracker.MarkCompleted("topic", 0, 101); err != nil {
+	if offset, advancedCount, err := tracker.MarkCompleted("topic", 0, 101); err != nil {
 		t.Fatal(err)
-	} else if !advanced || offset != 102 {
-		t.Fatalf("completion advanced=%v offset=%d, want true/102", advanced, offset)
+	} else if advancedCount != 2 || offset != 102 {
+		t.Fatalf(
+			"completion advancedCount=%d offset=%d, want 2/102",
+			advancedCount,
+			offset,
+		)
 	}
 }
 
@@ -46,12 +58,16 @@ func TestPartitionCompletionTrackerAllowsNumericOffsetGaps(t *testing.T) {
 
 	_, _, _ = tracker.MarkCompleted("topic", 0, 109)
 	_, _, _ = tracker.MarkCompleted("topic", 0, 105)
-	offset, advanced, err := tracker.MarkCompleted("topic", 0, 100)
+	offset, advancedCount, err := tracker.MarkCompleted("topic", 0, 100)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !advanced || offset != 109 {
-		t.Fatalf("completion advanced=%v offset=%d, want true/109", advanced, offset)
+	if advancedCount != 3 || offset != 109 {
+		t.Fatalf(
+			"completion advancedCount=%d offset=%d, want 3/109",
+			advancedCount,
+			offset,
+		)
 	}
 }
 
@@ -62,12 +78,16 @@ func TestPartitionCompletionTrackerSeparatesPartitions(t *testing.T) {
 	_ = tracker.Track("topic", 0, 100)
 	_ = tracker.Track("topic", 1, 500)
 
-	offset, advanced, err := tracker.MarkCompleted("topic", 1, 500)
+	offset, advancedCount, err := tracker.MarkCompleted("topic", 1, 500)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !advanced || offset != 500 {
-		t.Fatalf("completion advanced=%v offset=%d, want true/500", advanced, offset)
+	if advancedCount != 1 || offset != 500 {
+		t.Fatalf(
+			"completion advancedCount=%d offset=%d, want 1/500",
+			advancedCount,
+			offset,
+		)
 	}
 }
 

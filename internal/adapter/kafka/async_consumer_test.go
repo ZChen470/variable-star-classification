@@ -13,6 +13,23 @@ import (
 	"github.com/twmb/franz-go/pkg/kgo"
 )
 
+type fakeCommitProgressObserver struct {
+	mu    sync.Mutex
+	total int
+}
+
+func (observer *fakeCommitProgressObserver) ObserveCommittedRecords(count int) {
+	observer.mu.Lock()
+	observer.total += count
+	observer.mu.Unlock()
+}
+
+func (observer *fakeCommitProgressObserver) Total() int {
+	observer.mu.Lock()
+	defer observer.mu.Unlock()
+	return observer.total
+}
+
 type fakeAsyncConsumer struct {
 	mu          sync.Mutex
 	fetches     []kgo.Fetches
@@ -318,6 +335,126 @@ func TestAsyncConsumerRunnerDoesNotCommitYieldedBatch(t *testing.T) {
 	}
 	if consumer.allowCount != 1 {
 		t.Fatalf("AllowRebalance calls = %d, want 1", consumer.allowCount)
+	}
+}
+
+func TestAsyncConsumerRunnerObservesActualCommittedRecordCountAcrossOffsetGaps(
+	t *testing.T,
+) {
+	t.Parallel()
+
+	records := []*kgo.Record{
+		{Topic: "topic", Partition: 0, Offset: 100, Key: []byte("A")},
+		{Topic: "topic", Partition: 0, Offset: 105, Key: []byte("B")},
+		{Topic: "topic", Partition: 0, Offset: 109, Key: []byte("C")},
+	}
+	consumer := &fakeAsyncConsumer{
+		fetches: []kgo.Fetches{fetchesWithRecords(records...)},
+	}
+	observer := &fakeCommitProgressObserver{}
+	handler := application.MessageHandlerFunc(
+		func(context.Context, application.InboundMessage) error {
+			return nil
+		},
+	)
+
+	runner, err := newAsyncConsumerRunner(
+		consumer,
+		handler,
+		NewRebalanceYield(),
+		3,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	runner.commitProgressObserver = observer
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	done := make(chan error, 1)
+	go func() {
+		done <- runner.Run(ctx)
+	}()
+
+	deadline := time.After(time.Second)
+	for {
+		consumer.mu.Lock()
+		committed := len(consumer.commits) == 1
+		consumer.mu.Unlock()
+
+		if committed && observer.Total() == 3 {
+			break
+		}
+
+		select {
+		case <-deadline:
+			t.Fatalf(
+				"commit progress not observed: committed=%v total=%d",
+				committed,
+				observer.Total(),
+			)
+		default:
+			time.Sleep(time.Millisecond)
+		}
+	}
+
+	cancel()
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+
+	consumer.mu.Lock()
+	defer consumer.mu.Unlock()
+
+	if got := consumer.commits[0][0].Offset; got != 109 {
+		t.Fatalf("committed record offset = %d, want 109", got)
+	}
+	if got := observer.Total(); got != 3 {
+		t.Fatalf("committed actual record count = %d, want 3", got)
+	}
+}
+
+func TestAsyncConsumerRunnerDoesNotObserveFailedCommit(t *testing.T) {
+	t.Parallel()
+
+	expected := errors.New("commit failed")
+	consumer := &fakeAsyncConsumer{
+		fetches: []kgo.Fetches{fetchesWithRecords(
+			&kgo.Record{
+				Topic:     "topic",
+				Partition: 0,
+				Offset:    100,
+				Key:       []byte("A"),
+			},
+		)},
+		commitErr: expected,
+	}
+	observer := &fakeCommitProgressObserver{}
+	handler := application.MessageHandlerFunc(
+		func(context.Context, application.InboundMessage) error {
+			return nil
+		},
+	)
+
+	runner, err := newAsyncConsumerRunner(
+		consumer,
+		handler,
+		NewRebalanceYield(),
+		1,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	runner.commitProgressObserver = observer
+
+	err = runner.Run(context.Background())
+	if !errors.Is(err, expected) {
+		t.Fatalf("Run() error = %v, want %v", err, expected)
+	}
+
+	if got := observer.Total(); got != 0 {
+		t.Fatalf("committed actual record count = %d, want 0", got)
 	}
 }
 
