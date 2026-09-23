@@ -37,7 +37,8 @@ spec:
       labels:
         app: triton-gateway
     spec:
-      automountServiceAccountToken: false
+      serviceAccountName: triton-gateway-discovery
+      automountServiceAccountToken: true
       nodeSelector:
         kubernetes.io/hostname: dell-poweredge-r750xa
       containers:
@@ -47,8 +48,11 @@ spec:
           args:
             - --entrypoints.inference.address=:8000
             - --entrypoints.management.address=:8082
-            - --providers.file.filename=/etc/traefik/dynamic.yaml
-            - --providers.file.watch=true
+            - --providers.kubernetesingress=true
+            - --providers.kubernetesingress.namespaces=variable-star
+            - --providers.kubernetesingress.ingressclass=triton-gateway
+            - --providers.kubernetesingress.disableclusterscoperesources=true
+            - --providers.kubernetesingress.nativelbbydefault=false
             - --api.dashboard=false
             - --ping=true
             - --ping.entrypoint=management
@@ -65,8 +69,8 @@ spec:
               containerPort: 8082
           readinessProbe:
             httpGet:
-              path: /ping
-              port: management
+              path: /v2/health/ready
+              port: inference
             periodSeconds: 5
             timeoutSeconds: 2
             failureThreshold: 3
