@@ -187,7 +187,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "sum by (service,model) (rate(nv_inference_request_success{service=~\"triton-[ab]-external-metrics\"}[5m]))",
+          "expr": "sum by (service,model) (rate(nv_inference_request_success{service=\"variable-star-triton\"}[5m]))",
           "legendFormat": "{{service}} / {{model}}",
           "refId": "A"
         }
@@ -233,7 +233,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "sum by (service,model,reason) (rate(nv_inference_request_failure{service=~\"triton-[ab]-external-metrics\"}[5m]))",
+          "expr": "sum by (service,model,reason) (rate(nv_inference_request_failure{service=\"variable-star-triton\"}[5m]))",
           "legendFormat": "{{service}} / {{model}} / {{reason}}",
           "refId": "A"
         }
@@ -279,7 +279,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "(sum by (service,model) (rate(nv_inference_request_duration_us{service=~\"triton-[ab]-external-metrics\"}[5m])) / sum by (service,model) (rate(nv_inference_request_success{service=~\"triton-[ab]-external-metrics\"}[5m]))) / 1000",
+          "expr": "(sum by (service,model) (rate(nv_inference_request_duration_us{service=\"variable-star-triton\"}[5m])) / sum by (service,model) (rate(nv_inference_request_success{service=\"variable-star-triton\"}[5m]))) / 1000",
           "legendFormat": "{{service}} / {{model}}",
           "refId": "A"
         }
@@ -325,7 +325,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "(sum by (service,model) (rate(nv_inference_queue_duration_us{service=~\"triton-[ab]-external-metrics\"}[5m])) / sum by (service,model) (rate(nv_inference_request_success{service=~\"triton-[ab]-external-metrics\"}[5m]))) / 1000",
+          "expr": "(sum by (service,model) (rate(nv_inference_queue_duration_us{service=\"variable-star-triton\"}[5m])) / sum by (service,model) (rate(nv_inference_request_success{service=\"variable-star-triton\"}[5m]))) / 1000",
           "legendFormat": "{{service}} / {{model}}",
           "refId": "A"
         }
@@ -371,7 +371,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "(sum by (service,model) (rate(nv_inference_compute_infer_duration_us{service=~\"triton-[ab]-external-metrics\"}[5m])) / sum by (service,model) (rate(nv_inference_request_success{service=~\"triton-[ab]-external-metrics\"}[5m]))) / 1000",
+          "expr": "(sum by (service,model) (rate(nv_inference_compute_infer_duration_us{service=\"variable-star-triton\"}[5m])) / sum by (service,model) (rate(nv_inference_request_success{service=\"variable-star-triton\"}[5m]))) / 1000",
           "legendFormat": "{{service}} / {{model}}",
           "refId": "A"
         }
@@ -418,7 +418,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "nv_inference_pending_request_count{service=~\"triton-[ab]-external-metrics\"}",
+          "expr": "nv_inference_pending_request_count{service=\"variable-star-triton\"}",
           "legendFormat": "{{service}} / {{model}}",
           "refId": "A"
         }
@@ -466,7 +466,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "100 * nv_gpu_utilization{service=~\"triton-[ab]-external-metrics\"}",
+          "expr": "100 * nv_gpu_utilization{service=\"variable-star-triton\"}",
           "legendFormat": "{{service}}",
           "refId": "A"
         }
@@ -514,7 +514,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "100 * nv_gpu_memory_used_bytes{service=~\"triton-[ab]-external-metrics\"} / nv_gpu_memory_total_bytes{service=~\"triton-[ab]-external-metrics\"}",
+          "expr": "100 * nv_gpu_memory_used_bytes{service=\"variable-star-triton\"} / nv_gpu_memory_total_bytes{service=\"variable-star-triton\"}",
           "legendFormat": "{{service}}",
           "refId": "A"
         }
