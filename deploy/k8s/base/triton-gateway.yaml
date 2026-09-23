@@ -16,8 +16,7 @@ data:
         triton-backends:
           loadBalancer:
             servers:
-              - url: http://10.3.10.166:18000
-              - url: http://10.3.10.166:18001
+              - url: http://variable-star-triton:8000
             healthCheck:
               path: /v2/health/ready
               interval: 5s
