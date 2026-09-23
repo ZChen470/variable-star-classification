@@ -1,0 +1,20 @@
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: triton-k8s-metrics
+  namespace: variable-star
+  labels:
+    release: monitoring
+spec:
+  serviceDiscoveryRole: EndpointSlice
+  namespaceSelector:
+    matchNames:
+      - variable-star
+  selector:
+    matchLabels:
+      monitoring.variable-star.io/component: triton-k8s-metrics
+  endpoints:
+    - port: metrics
+      path: /metrics
+      interval: 15s
+      scrapeTimeout: 5s

@@ -31,10 +31,13 @@ spec:
             - --model-load-thread-count=1
             - --cuda-memory-pool-byte-size=0:268435456
             - --allow-grpc=false
-            - --allow-metrics=false
+            - --allow-metrics=true
           ports:
             - name: http
               containerPort: 8000
+              protocol: TCP
+            - name: metrics
+              containerPort: 8002
               protocol: TCP
           resources:
             limits:
@@ -72,6 +75,8 @@ kind: Service
 metadata:
   name: variable-star-triton
   namespace: variable-star
+  labels:
+    monitoring.variable-star.io/component: triton-k8s-metrics
 spec:
   type: ClusterIP
   internalTrafficPolicy: Cluster
@@ -82,5 +87,9 @@ spec:
     - name: http
       port: 8000
       targetPort: http
+      protocol: TCP
+    - name: metrics
+      port: 8002
+      targetPort: metrics
       protocol: TCP
   sessionAffinity: None

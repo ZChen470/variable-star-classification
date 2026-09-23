@@ -6,6 +6,7 @@ resources:
   - podmonitor-variable-star-applications.yaml
   - podmonitor-triton-gateway.yaml
   - triton-external-metrics.yaml
+  - triton-k8s-metrics.yaml
 
 configMapGenerator:
   - name: grafana-dashboard-application-operations
