@@ -1,0 +1,52 @@
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: variable-star-triton
+  namespace: variable-star
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: variable-star-triton
+
+  minReplicaCount: 1
+  maxReplicaCount: 2
+
+  advanced:
+    restoreToOriginalReplicaCount: true
+    horizontalPodAutoscalerConfig:
+      name: variable-star-triton-keda-hpa
+      behavior:
+        scaleUp:
+          stabilizationWindowSeconds: 0
+          selectPolicy: Max
+          policies:
+            - type: Pods
+              value: 1
+              periodSeconds: 60
+        scaleDown:
+          stabilizationWindowSeconds: 300
+          selectPolicy: Max
+          policies:
+            - type: Pods
+              value: 1
+              periodSeconds: 60
+
+  triggers:
+    - type: prometheus
+      metricType: Value
+      metadata:
+        serverAddress: http://monitoring-kube-prometheus-prometheus.monitoring.svc.cluster.local:9090
+        query: >-
+          sum(
+            rate(
+              nv_inference_request_success{
+                namespace="variable-star",
+                service="variable-star-triton",
+                model="variable_star_classifier"
+              }[2m]
+            )
+          )
+        threshold: "10"
+        ignoreNullValues: "false"
+        timeout: "3s"
