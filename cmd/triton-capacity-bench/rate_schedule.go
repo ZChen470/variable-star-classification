@@ -3,13 +3,17 @@ package main
 import (
 	"context"
 	"fmt"
+	"log"
 	"time"
 )
 
 const (
-	maxRateDuration = 10 * time.Minute
-	maxRateRequests = 100000
-	maxDispatchLag  = 250 * time.Millisecond
+	maxRateDuration       = 10 * time.Minute
+	maxRateRequests       = 100000
+	lateDispatchThreshold = 250 * time.Millisecond
+	maxDispatchLag        = time.Second
+	dispatchWindow        = 30 * time.Second
+	minWindowRateFraction = 0.95
 )
 
 type ratePlan struct {
@@ -42,12 +46,27 @@ func dispatchRate(
 	plan ratePlan,
 	submit func(context.Context, int) error,
 ) (int, error) {
+	if submit == nil {
+		return 0, fmt.Errorf("invalid rate scheduler arguments")
+	}
+	return dispatchRateWithDue(ctx, plan, func(ctx context.Context, index int, _ time.Time) error {
+		return submit(ctx, index)
+	})
+}
+
+func dispatchRateWithDue(
+	ctx context.Context,
+	plan ratePlan,
+	submit func(context.Context, int, time.Time) error,
+) (int, error) {
 	if ctx == nil || submit == nil || plan.rate < 1 || plan.requests < 1 {
 		return 0, fmt.Errorf("invalid rate scheduler arguments")
 	}
 
 	start := time.Now()
 	submitted := 0
+	windowStartSubmitted := 0
+	windowsChecked := 0
 
 	for index := 0; index < plan.requests; index++ {
 		if err := ctx.Err(); err != nil {
@@ -75,7 +94,7 @@ func dispatchRate(
 		preSubmitLag := time.Since(due)
 		submitStarted := time.Now()
 		submitCtx, cancel := context.WithDeadline(ctx, due.Add(maxDispatchLag))
-		err := submit(submitCtx, index)
+		err := submit(submitCtx, index, due)
 		submitWait := time.Since(submitStarted)
 		cancel()
 		if err != nil {
@@ -85,7 +104,38 @@ func dispatchRate(
 			)
 		}
 
+		acceptedAt := time.Now()
+		if plan.duration > 0 && !acceptedAt.Before(start.Add(plan.duration)) {
+			return submitted + 1, fmt.Errorf(
+				"rate scheduler request %d accepted after dispatch duration: elapsed=%s duration=%s",
+				index, acceptedAt.Sub(start), plan.duration,
+			)
+		}
+
+		// Count only jobs accepted before each fixed 30-second boundary.
+		// The current job belongs to the new window if it crossed a boundary.
+		windowNumber := int(acceptedAt.Sub(start) / dispatchWindow)
+		if windowNumber > windowsChecked {
+			windowCount := submitted - windowStartSubmitted
+			if err := checkDispatchWindow(plan.rate, windowCount, windowsChecked+1); err != nil {
+				return submitted + 1, err
+			}
+			log.Printf(
+				"rate scheduler window: window=%d submitted=%d actual_rate=%.2f/s target_rate=%d/s",
+				windowsChecked+1, windowCount,
+				float64(windowCount)/dispatchWindow.Seconds(), plan.rate,
+			)
+			windowStartSubmitted = submitted
+			windowsChecked = windowNumber
+		}
+
 		submitted++
+		if lag := time.Since(due); lag > lateDispatchThreshold {
+			log.Printf(
+				"rate scheduler late dispatch: request=%d due_lag=%s threshold=%s limit=%s",
+				index, lag, lateDispatchThreshold, maxDispatchLag,
+			)
+		}
 		if lag := time.Since(due); lag > maxDispatchLag {
 			return submitted, fmt.Errorf(
 				"rate scheduler overloaded: dispatch lag %s exceeds %s after request %d",
@@ -94,6 +144,27 @@ func dispatchRate(
 		}
 	}
 
+	// A complete planned window must reach its wall-clock end before
+	// its final dispatch count can be accepted.
+	if plan.duration >= dispatchWindow && plan.duration%dispatchWindow == 0 {
+		if err := waitForDurationEnd(ctx, start, plan.duration); err != nil {
+			return submitted, err
+		}
+	}
+
+	finalCount, err := checkFinalDispatchWindow(
+		plan, submitted, windowStartSubmitted, windowsChecked,
+	)
+	if err != nil {
+		return submitted, err
+	}
+	if finalCount > 0 {
+		log.Printf(
+			"rate scheduler final window: window=%d submitted=%d actual_rate=%.2f/s target_rate=%d/s",
+			int(plan.duration/dispatchWindow), finalCount,
+			float64(finalCount)/dispatchWindow.Seconds(), plan.rate,
+		)
+	}
 	return submitted, nil
 }
 
@@ -115,4 +186,64 @@ func resolveWorkload(requests, rate int, duration time.Duration) (ratePlan, int,
 		return ratePlan{}, 0, false, err
 	}
 	return plan, plan.requests, true, nil
+}
+
+func checkDispatchWindow(rate, submitted, windowNumber int) error {
+	if rate <= 0 || submitted < 0 || windowNumber < 1 {
+		return fmt.Errorf("invalid dispatch window arguments")
+	}
+	actualRate := float64(submitted) / dispatchWindow.Seconds()
+	minRate := float64(rate) * minWindowRateFraction
+	if actualRate < minRate {
+		return fmt.Errorf(
+			"rate scheduler sustained under-target dispatch: window=%d submitted=%d actual_rate=%.2f/s target_rate=%d/s minimum_rate=%.2f/s",
+			windowNumber, submitted, actualRate, rate, minRate,
+		)
+	}
+	return nil
+}
+
+// checkFinalDispatchWindow checks the last complete planned window, which
+// otherwise has no subsequent dispatch to trigger its boundary check.
+func checkFinalDispatchWindow(
+	plan ratePlan,
+	submitted, windowStartSubmitted, windowsChecked int,
+) (int, error) {
+	if plan.duration < dispatchWindow || plan.duration%dispatchWindow != 0 {
+		return 0, nil
+	}
+
+	fullWindows := int(plan.duration / dispatchWindow)
+	if windowsChecked == fullWindows {
+		return 0, nil
+	}
+	if windowsChecked != fullWindows-1 {
+		return 0, fmt.Errorf(
+			"unexpected final dispatch window: checked=%d expected=%d",
+			windowsChecked, fullWindows-1,
+		)
+	}
+
+	count := submitted - windowStartSubmitted
+	if err := checkDispatchWindow(plan.rate, count, fullWindows); err != nil {
+		return 0, err
+	}
+	return count, nil
+}
+
+func waitForDurationEnd(ctx context.Context, start time.Time, duration time.Duration) error {
+	remaining := time.Until(start.Add(duration))
+	if remaining <= 0 {
+		return ctx.Err()
+	}
+
+	timer := time.NewTimer(remaining)
+	defer timer.Stop()
+
+	select {
+	case <-timer.C:
+		return ctx.Err()
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 }

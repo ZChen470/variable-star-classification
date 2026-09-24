@@ -18,8 +18,9 @@ import (
 const modelBundleVersion = "variable-classifier-2026-07-003"
 
 type result struct {
-	duration time.Duration
-	err      error
+	duration       time.Duration
+	err            error
+	plannedToStart time.Duration
 }
 
 func main() {
@@ -102,8 +103,12 @@ func main() {
 	elapsed := outcome.elapsed
 
 	latencies := make([]time.Duration, 0, submitted)
+	plannedToStart := make([]time.Duration, 0, submitted)
 	failures := 0
 	for _, item := range results[:submitted] {
+		if paced {
+			plannedToStart = append(plannedToStart, item.plannedToStart)
+		}
 		if item.err != nil {
 			failures++
 			continue
@@ -133,6 +138,16 @@ func main() {
 			percentile(latencies, 0.50),
 			percentile(latencies, 0.95),
 			percentile(latencies, 0.99))
+	}
+	if paced && len(plannedToStart) > 0 {
+		sort.Slice(plannedToStart, func(i, j int) bool {
+			return plannedToStart[i] < plannedToStart[j]
+		})
+		fmt.Printf("planned_to_classify_start_p50=%s p95=%s p99=%s max=%s\n",
+			percentile(plannedToStart, 0.50),
+			percentile(plannedToStart, 0.95),
+			percentile(plannedToStart, 0.99),
+			plannedToStart[len(plannedToStart)-1])
 	}
 
 	if outcome.firstErr != nil {

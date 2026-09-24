@@ -10,6 +10,11 @@ import (
 
 type classifyFunc func(context.Context, application.ClassificationInput) error
 
+type scheduledJob struct {
+	index int
+	due   time.Time
+}
+
 type workloadOutcome struct {
 	results         []result
 	submitted       int
@@ -37,7 +42,7 @@ func runWorkload(
 	}
 
 	firstFailure := make(chan error, 1)
-	jobs := make(chan int)
+	jobs := make(chan scheduledJob)
 	results := make([]result, requestCount)
 	var workers sync.WaitGroup
 
@@ -47,16 +52,21 @@ func runWorkload(
 			defer workers.Done()
 			input := benchmarkInput()
 
-			for index := range jobs {
+			for job := range jobs {
 				ctx, cancel := context.WithTimeout(requestBaseCtx, timeout)
 				started := time.Now()
+				plannedToStart := time.Duration(0)
+				if paced {
+					plannedToStart = started.Sub(job.due)
+				}
 				callErr := classify(ctx, input)
 				callElapsed := time.Since(started)
 				cancel()
 
-				results[index] = result{
-					duration: callElapsed,
-					err:      callErr,
+				results[job.index] = result{
+					duration:       callElapsed,
+					err:            callErr,
+					plannedToStart: plannedToStart,
 				}
 
 				if paced && callErr != nil {
@@ -76,12 +86,12 @@ func runWorkload(
 	var dispatchErr error
 
 	if paced {
-		submitted, dispatchErr = dispatchRate(
+		submitted, dispatchErr = dispatchRateWithDue(
 			pacedCtx,
 			plan,
-			func(ctx context.Context, index int) error {
+			func(ctx context.Context, index int, due time.Time) error {
 				select {
-				case jobs <- index:
+				case jobs <- scheduledJob{index: index, due: due}:
 					return nil
 				case <-ctx.Done():
 					return ctx.Err()
@@ -90,7 +100,7 @@ func runWorkload(
 		)
 	} else {
 		for index := 0; index < requestCount; index++ {
-			jobs <- index
+			jobs <- scheduledJob{index: index}
 			submitted++
 		}
 	}

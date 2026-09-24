@@ -90,3 +90,44 @@ func TestRunWorkloadUnpacedPreservesRequestCount(t *testing.T) {
 		}
 	}
 }
+
+func TestRunWorkloadPacedMeasuresPlannedToStart(t *testing.T) {
+	plan := ratePlan{rate: 10, requests: 3}
+	calls := 0
+
+	outcome := runWorkload(
+		context.Background(),
+		plan,
+		plan.requests,
+		true,
+		1,
+		time.Second,
+		func(ctx context.Context, input application.ClassificationInput) error {
+			calls++
+			time.Sleep(150 * time.Millisecond)
+			return nil
+		},
+	)
+
+	if outcome.dispatchErr != nil || outcome.firstErr != nil {
+		t.Fatalf("unexpected errors: dispatch=%v first=%v",
+			outcome.dispatchErr, outcome.firstErr)
+	}
+	if outcome.submitted != 3 || calls != 3 {
+		t.Fatalf("submitted=%d calls=%d, want 3", outcome.submitted, calls)
+	}
+
+	// Request 2 was scheduled 100ms after request 1, but the single worker
+	// was busy for approximately 150ms.
+	if got := outcome.results[1].plannedToStart; got < 35*time.Millisecond {
+		t.Fatalf("second request planned-to-start delay=%s, want >=35ms", got)
+	}
+	for index, item := range outcome.results {
+		if item.err != nil || item.plannedToStart < 0 {
+			t.Fatalf("result[%d]=%+v", index, item)
+		}
+	}
+	t.Logf("planned_to_start_second=%s planned_to_start_third=%s",
+		outcome.results[1].plannedToStart,
+		outcome.results[2].plannedToStart)
+}
