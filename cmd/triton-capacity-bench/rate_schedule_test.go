@@ -107,6 +107,11 @@ func TestDispatchRateRejectsBlockedSubmission(t *testing.T) {
 	if submitted != 0 || err == nil || !strings.Contains(err.Error(), "could not submit") {
 		t.Fatalf("submitted = %d, err = %v; want explicit submission failure", submitted, err)
 	}
+	for _, field := range []string{"pre_submit_lag=", "submit_wait=", "total_due_lag=", "budget="} {
+		if !strings.Contains(err.Error(), field) {
+			t.Fatalf("submission failure missing %s: %v", field, err)
+		}
+	}
 }
 
 func TestResolveWorkload(t *testing.T) {

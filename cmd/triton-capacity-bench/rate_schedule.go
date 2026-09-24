@@ -72,11 +72,17 @@ func dispatchRate(
 			)
 		}
 
+		preSubmitLag := time.Since(due)
+		submitStarted := time.Now()
 		submitCtx, cancel := context.WithDeadline(ctx, due.Add(maxDispatchLag))
 		err := submit(submitCtx, index)
+		submitWait := time.Since(submitStarted)
 		cancel()
 		if err != nil {
-			return submitted, fmt.Errorf("rate scheduler could not submit request %d: %w", index, err)
+			return submitted, fmt.Errorf(
+				"rate scheduler could not submit request %d: pre_submit_lag=%s submit_wait=%s total_due_lag=%s budget=%s: %w",
+				index, preSubmitLag, submitWait, time.Since(due), maxDispatchLag, err,
+			)
 		}
 
 		submitted++
