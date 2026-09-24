@@ -1573,6 +1573,41 @@ cmd/science-classifier-web/
 
 它仅是科学测试工具，不属于生产实时分类链路。
 
+
+### Science Classifier Web 部署与 Triton 地址配置
+
+科学测试前端是独立的 Docker 容器，不由 Kubernetes Deployment 或 Docker Compose 管理。
+
+当前部署配置：
+
+- 容器名称：`science-classifier-web`
+- 网络模式：`host`
+- Web 监听地址：`0.0.0.0:8088`
+- 模型版本：`variable-classifier-2026-07-003`
+- 模型 Manifest：`/app/models/bundles/model-bundle-manifest-v2.yaml`
+- Triton 入口：Kubernetes 中的 `variable-star/triton-gateway` Service
+
+Triton 已迁移至 Kubernetes，不得再使用原 Docker 推理地址 `http://127.0.0.1:18000`。
+
+仓库提供独立部署脚本：
+
+```bash
+bash deploy/scripts/deploy-science-web.sh
+```
+
+脚本在部署时通过 `kubectl` 获取 `triton-gateway` 当前的 ClusterIP，并据此设置 `TRITON_BASE_URL`，避免在部署配置中写死旧地址或当前的 Service IP。
+
+**注意：执行部署脚本会重建 8088 前端容器。当前运行中的前端已经修复，不需要为了更新 README 而重新部署。部署脚本尚未完成实际重部署验收，正式使用前须检查其失败回滚路径。**
+
+部署后可检查：
+
+```bash
+docker inspect -f '{{range .Config.Env}}{{println .}}{{end}}' science-classifier-web | grep '^TRITON_BASE_URL='
+curl -fsS http://127.0.0.1:8088/ >/dev/null
+```
+
+最后通过 `http://10.3.10.166:8088/` 上传有效光变曲线，执行一次真实分类，确认前端与 Kubernetes Triton 的推理链路正常。
+
 ---
 
 ## 安全基线
