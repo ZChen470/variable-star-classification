@@ -8,7 +8,6 @@ import (
 	"math"
 	"net/http"
 	"sort"
-	"sync"
 	"time"
 
 	"github.com/ZChen470/variable-star-classification/internal/adapter/modelbundle"
@@ -27,14 +26,19 @@ func main() {
 	baseURL := flag.String("url", "", "Direct Triton Pod HTTP URL")
 	manifest := flag.String("manifest", "models/bundles/model-bundle-manifest-v2.yaml", "Serving bundle manifest")
 	concurrency := flag.Int("concurrency", 0, "Number of concurrent requests (1..32)")
-	requests := flag.Int("requests", 0, "Total number of requests (1..5000)")
+	requests := flag.Int("requests", 0, "Total requests in unpaced mode (1..5000)")
+	rate := flag.Int("rate", 0, "Target request dispatch rate in requests/s (paced mode)")
+	duration := flag.Duration("duration", 0, "Request dispatch duration (paced mode)")
 	timeout := flag.Duration("timeout", 10*time.Second, "Per-request timeout")
 	flag.Parse()
 
-	if *baseURL == "" || *concurrency < 1 || *concurrency > 32 ||
-		*requests < 1 || *requests > 5000 || *requests < *concurrency ||
-		*timeout <= 0 {
-		log.Fatal("require -url, -concurrency 1..32, -requests 1..5000 (requests >= concurrency), and positive -timeout")
+	if *baseURL == "" || *concurrency < 1 || *concurrency > 32 || *timeout <= 0 {
+		log.Fatal("require -url, -concurrency 1..32, and positive -timeout")
+	}
+
+	plan, requestCount, paced, err := resolveWorkload(*requests, *rate, *duration)
+	if err != nil {
+		log.Fatal(err)
 	}
 
 	resolver, err := modelbundle.NewFileServingBundleResolver(*manifest)
@@ -79,42 +83,27 @@ func main() {
 		log.Fatal(err)
 	}
 
-	jobs := make(chan int)
-	results := make([]result, *requests)
-	var workers sync.WaitGroup
+	outcome := runWorkload(
+		context.Background(),
+		plan,
+		requestCount,
+		paced,
+		*concurrency,
+		*timeout,
+		func(ctx context.Context, input application.ClassificationInput) error {
+			_, callErr := classifier.Classify(ctx, input)
+			return callErr
+		},
+	)
+	results := outcome.results
+	submitted := outcome.submitted
+	dispatchErr := outcome.dispatchErr
+	dispatchElapsed := outcome.dispatchElapsed
+	elapsed := outcome.elapsed
 
-	workers.Add(*concurrency)
-	for workerID := 0; workerID < *concurrency; workerID++ {
-		go func() {
-			defer workers.Done()
-			input := benchmarkInput()
-
-			for index := range jobs {
-				ctx, cancel := context.WithTimeout(context.Background(), *timeout)
-				started := time.Now()
-				_, callErr := classifier.Classify(ctx, input)
-				elapsed := time.Since(started)
-				cancel()
-
-				results[index] = result{
-					duration: elapsed,
-					err:      callErr,
-				}
-			}
-		}()
-	}
-
-	started := time.Now()
-	for index := 0; index < *requests; index++ {
-		jobs <- index
-	}
-	close(jobs)
-	workers.Wait()
-	elapsed := time.Since(started)
-
-	latencies := make([]time.Duration, 0, *requests)
+	latencies := make([]time.Duration, 0, submitted)
 	failures := 0
-	for _, item := range results {
+	for _, item := range results[:submitted] {
 		if item.err != nil {
 			failures++
 			continue
@@ -126,8 +115,16 @@ func main() {
 	})
 
 	successes := len(latencies)
-	fmt.Printf("target=%s mode=COMPUTE_BOOTSTRAP epochs=21 concurrency=%d requests=%d\n",
-		*baseURL, *concurrency, *requests)
+	if paced {
+		fmt.Printf("target=%s mode=COMPUTE_BOOTSTRAP epochs=21 concurrency=%d requests=%d rate=%d/s duration=%s\n",
+			*baseURL, *concurrency, requestCount, plan.rate, plan.duration)
+		fmt.Printf("dispatch_submitted=%d planned=%d dispatch_elapsed=%s actual_dispatch_rate=%.2f_requests_per_second\n",
+			submitted, plan.requests, dispatchElapsed,
+			float64(submitted)/dispatchElapsed.Seconds())
+	} else {
+		fmt.Printf("target=%s mode=COMPUTE_BOOTSTRAP epochs=21 concurrency=%d requests=%d\n",
+			*baseURL, *concurrency, requestCount)
+	}
 	fmt.Printf("elapsed=%s successes=%d failures=%d throughput=%.2f_successes_per_second\n",
 		elapsed, successes, failures, float64(successes)/elapsed.Seconds())
 
@@ -136,6 +133,15 @@ func main() {
 			percentile(latencies, 0.50),
 			percentile(latencies, 0.95),
 			percentile(latencies, 0.99))
+	}
+
+	if outcome.firstErr != nil {
+		log.Fatalf("rate benchmark stopped after request failure: %v; submitted=%d/%d",
+			outcome.firstErr, submitted, requestCount)
+	}
+
+	if dispatchErr != nil {
+		log.Fatalf("rate benchmark dispatch failed after %d/%d submissions: %v", submitted, requestCount, dispatchErr)
 	}
 
 	if failures > 0 {
