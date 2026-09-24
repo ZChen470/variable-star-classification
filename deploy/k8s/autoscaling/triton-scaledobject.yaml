@@ -34,7 +34,7 @@ spec:
 
   triggers:
     - type: prometheus
-      metricType: Value
+      metricType: AverageValue
       metadata:
         serverAddress: http://monitoring-kube-prometheus-prometheus.monitoring.svc.cluster.local:9090
         query: >-
@@ -47,6 +47,35 @@ spec:
               }[2m]
             )
           )
-        threshold: "10"
+        threshold: "90"
+        ignoreNullValues: "false"
+        timeout: "3s"
+    - type: prometheus
+      metricType: Value
+      metadata:
+        serverAddress: http://monitoring-kube-prometheus-prometheus.monitoring.svc.cluster.local:9090
+        query: >-
+          max(
+            sum by (pod) (
+              rate(nv_inference_queue_duration_us{
+                namespace="variable-star",
+                service="variable-star-triton",
+                model="variable_star_classifier"
+              }[2m])
+            )
+            /
+            clamp_min(
+              sum by (pod) (
+                rate(nv_inference_request_success{
+                  namespace="variable-star",
+                  service="variable-star-triton",
+                  model="variable_star_classifier"
+                }[2m])
+              ),
+              0.01
+            )
+            / 1000
+          )
+        threshold: "5"
         ignoreNullValues: "false"
         timeout: "3s"
